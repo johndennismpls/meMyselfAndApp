@@ -1,0 +1,254 @@
+/*
+ * Sizes derive from --ws-font-size (the Font size control), keeping the script's
+ * ratios: grid 0.92x, word bank 0.83x, seed footer 0.75x.
+ */
+.ws {
+  --ws-grid-size: calc(var(--ws-font-size) * 0.92);
+  --ws-wordbank-size: calc(var(--ws-font-size) * 0.83);
+  --ws-seed-size: calc(var(--ws-font-size) * 0.75);
+
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 24px 20px 40px;
+  box-sizing: border-box;
+}
+
+.ws-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  h1 {
+    margin: 0;
+    font-size: 32px;
+    letter-spacing: -0.8px;
+  }
+}
+
+.ws-back {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 15px;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.ws-controls {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-sizing: border-box;
+  text-align: left;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 14px;
+  }
+
+  input,
+  textarea {
+    font: inherit;
+    font-size: 15px;
+    padding: 6px 8px;
+    color: var(--text-h);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+
+  input[type='number'] {
+    width: 90px;
+  }
+
+  textarea {
+    resize: vertical;
+    font-family: var(--mono);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+}
+
+.ws-words {
+  flex: 1 1 320px;
+  min-width: 240px;
+}
+
+.ws-actions {
+  display: flex;
+  gap: 8px;
+  align-self: flex-end;
+
+  button {
+    font: inherit;
+    font-size: 15px;
+    padding: 7px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--accent-border);
+    background: var(--accent-bg);
+    color: var(--accent);
+    cursor: pointer;
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    &:not(:disabled):hover {
+      border-color: var(--accent);
+    }
+  }
+}
+
+.ws-error {
+  font-style: normal;
+  font-size: 13px;
+  color: #c0392b;
+}
+
+.ws-warning {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--code-bg);
+
+  button {
+    font: inherit;
+    font-size: 13px;
+    background: none;
+    border: 0;
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: underline;
+  }
+}
+
+.ws-grid {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: var(--ws-grid-size);
+  color: var(--text-h);
+
+  caption {
+    /* Structure for screen readers; the grid speaks for itself on screen. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  td {
+    width: 1.75em;
+    height: 1.75em;
+    padding: 0;
+    text-align: center;
+    vertical-align: middle;
+    line-height: 1;
+  }
+}
+
+.ws-wordbank {
+  width: 100%;
+  max-width: 44em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--ws-wordbank-size);
+  color: var(--text-h);
+  text-align: left;
+  /* The responsive equivalent of the script's num_cols arithmetic. */
+  columns: 12em;
+  column-gap: 30px;
+
+  li {
+    break-inside: avoid;
+    line-height: 1.6;
+  }
+}
+
+.ws-seed {
+  font-size: var(--ws-seed-size);
+}
+
+.ws-empty {
+  font-size: 15px;
+}
+
+@media print {
+  @page {
+    size: letter;
+    /* 1in vertical / 1.5in horizontal — the script's 72pt/108pt margins. */
+    margin: 1in 1.5in;
+  }
+
+  /* Force black-on-white ink regardless of the app's theme variables. */
+  :root,
+  body,
+  #root {
+    background: #fff !important;
+    color: #000 !important;
+    border: 0 !important;
+    width: auto !important;
+    min-height: 0 !important;
+    display: block !important;
+  }
+
+  .ws-header,
+  .ws-controls,
+  .ws-warning,
+  .ws-empty,
+  .tsqd-parent-container {
+    display: none !important;
+  }
+
+  .ws {
+    display: block;
+    padding: 0;
+    text-align: center;
+  }
+
+  .ws-grid,
+  .ws-wordbank {
+    break-inside: avoid;
+  }
+
+  .ws-grid {
+    margin: 0 auto;
+    color: #000 !important;
+  }
+
+  .ws-wordbank {
+    margin: calc(var(--ws-grid-size) * 0.65) auto 0;
+    color: #000 !important;
+  }
+
+  .ws-seed {
+    margin-top: 1.5em;
+    color: #000 !important;
+  }
+
+  /* The script printed the seed only when one was explicitly supplied. */
+  .ws-seed-unsupplied {
+    display: none !important;
+  }
+}
