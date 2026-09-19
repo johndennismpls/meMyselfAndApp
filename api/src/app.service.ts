@@ -1,12 +1,9 @@
 import { Injectable } from '@nestjs/common';
-
-export interface Greeting {
-  message: string;
-}
+import type { GreetingDto } from './dto/greeting.dto';
 
 @Injectable()
 export class AppService {
-  getHello(): Greeting {
+  getHello(): GreetingDto {
     return { message: 'Hello World!' };
   }
 }
