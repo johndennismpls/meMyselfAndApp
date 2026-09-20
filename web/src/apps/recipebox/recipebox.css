@@ -1,0 +1,452 @@
+/*
+ * Recipe Box. Tokens from web/src/index.css only — no raw colors (styleguide §5).
+ *
+ * Ingredients and steps use the sans stack, not mono: they are prose, not data.
+ * Focus outlines are not declared here; the single :focus-visible rule in
+ * index.css covers every interactive element the moment it exists.
+ */
+
+.rb {
+  padding: 24px 24px 64px;
+  text-align: left;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.rb-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.rb-header h1 {
+  margin: 0;
+}
+
+.rb-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+.rb-link:hover {
+  text-decoration: underline;
+}
+
+.rb-note {
+  color: var(--text);
+}
+
+.rb-error {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+
+/* ---- The ask box (§9.2) ---------------------------------------------- */
+
+.rb-ask {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rb-ask-row {
+  display: flex;
+  gap: 12px;
+}
+
+.rb-ask-input,
+.rb-filter,
+.rb-form input,
+.rb-form textarea {
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text-h);
+  font: inherit;
+  padding: 10px 14px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.rb-ask-input {
+  font-size: 20px;
+}
+
+.rb-form textarea {
+  font-family: var(--sans);
+  line-height: 150%;
+  resize: vertical;
+}
+
+.rb-button {
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 10px 24px;
+  white-space: nowrap;
+}
+.rb-button:hover:not(:disabled) {
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+}
+.rb-button:disabled,
+.rb-text-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.rb-text-button {
+  background: none;
+  border: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 4px 0;
+}
+.rb-text-button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+/*
+ * The staged status line. A find is 30-60 seconds with no progress signal, so
+ * this is the difference between "working" and "hung" — not decoration.
+ */
+.rb-status {
+  color: var(--text);
+  font-style: italic;
+}
+
+.rb-actions {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+/* ---- The grid -------------------------------------------------------- */
+
+.rb-empty {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 32px;
+  max-width: 60ch;
+}
+.rb-empty h2 {
+  margin-top: 0;
+}
+
+.rb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 20px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.rb-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  text-decoration: none;
+}
+.rb-card:hover {
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+}
+
+.rb-card-image {
+  aspect-ratio: 4 / 3;
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+/* A recipe with no picture saves fine; the card shows this instead (§8). */
+.rb-card-placeholder {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.rb-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 18px;
+}
+
+.rb-card-title {
+  color: var(--text-h);
+  font-size: 18px;
+  line-height: 130%;
+}
+
+.rb-card-meta,
+.rb-meta {
+  align-items: center;
+  color: var(--text);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 15px;
+  gap: 10px;
+}
+
+.rb-badge {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+
+/* ---- The detail page ------------------------------------------------- */
+
+.rb-found {
+  align-items: center;
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
+  border-radius: 8px;
+  color: var(--success);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 12px 18px;
+}
+.rb-found strong {
+  color: var(--success);
+  font-weight: 500;
+}
+
+.rb-recipe {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 70ch;
+}
+.rb-recipe h1 {
+  margin: 0;
+}
+
+.rb-hero {
+  border-radius: 10px;
+  display: block;
+  max-height: 420px;
+  object-fit: cover;
+  width: 100%;
+}
+
+.rb-description {
+  color: var(--text-h);
+  font-size: 20px;
+  line-height: 150%;
+}
+
+.rb-section h2 {
+  margin-bottom: 12px;
+}
+.rb-section h3 {
+  color: var(--text-h);
+  font-size: 17px;
+  font-weight: 500;
+  margin: 16px 0 6px;
+}
+.rb-section ul,
+.rb-section ol {
+  margin: 0;
+  padding-left: 24px;
+}
+.rb-section li {
+  margin-bottom: 8px;
+}
+/* Prose, not data — the sans stack, same as everything else. */
+.rb-section li,
+.rb-ingredient-group li {
+  font-family: var(--sans);
+}
+
+.rb-provenance {
+  border-top: 1px solid var(--border);
+  font-size: 15px;
+  padding-top: 16px;
+}
+
+/* ---- Edit mode ------------------------------------------------------- */
+
+.rb-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 70ch;
+}
+
+.rb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rb-field > span {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.rb-field-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.rb-field-row > .rb-field {
+  flex: 1;
+  min-width: 120px;
+}
+.rb-field-small {
+  max-width: 140px;
+}
+
+.rb-fieldset {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 18px 20px;
+}
+.rb-fieldset legend {
+  color: var(--text);
+  font-size: 15px;
+  padding: 0 6px;
+}
+
+.rb-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rb-group-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.rb-image-controls,
+.rb-danger {
+  display: flex;
+  gap: 20px;
+  max-width: 70ch;
+}
+
+.rb-danger {
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+/* Red marks errors in this palette, not destructive actions — so this is
+   ordinary text, and only the copy carries the weight. */
+.rb-danger .rb-text-button {
+  color: var(--danger);
+}
+
+@media (max-width: 1024px) {
+  .rb {
+    padding: 16px 16px 48px;
+  }
+  .rb-ask-row {
+    flex-direction: column;
+  }
+  .rb-ask-input {
+    font-size: 18px;
+  }
+}
+
+/* ---- Print (§9.4) ---------------------------------------------------- */
+
+@media print {
+  @page {
+    size: letter;
+    margin: 0.75in;
+  }
+
+  /* Ink on white, regardless of the app's theme variables. */
+  :root,
+  body,
+  #root {
+    background: #fff !important;
+    color: #000 !important;
+    border: 0 !important;
+    width: auto !important;
+    min-height: 0 !important;
+    display: block !important;
+  }
+
+  .rb-header,
+  .rb-ask,
+  .rb-filter,
+  .rb-found,
+  .rb-controls,
+  .rb-form,
+  .rb-image-controls,
+  .rb-danger,
+  .rb-provenance,
+  .tsqd-parent-container {
+    display: none !important;
+  }
+
+  .rb,
+  .rb-recipe {
+    display: block;
+    max-width: none;
+    padding: 0;
+  }
+
+  .rb-recipe h1 {
+    color: #000 !important;
+    font-size: 28pt;
+    margin: 0 0 12pt;
+  }
+
+  .rb-description,
+  .rb-meta,
+  .rb-section h2,
+  .rb-section h3,
+  .rb-section li,
+  .rb-badge {
+    color: #000 !important;
+  }
+
+  .rb-badge {
+    background: none !important;
+    border: 1px solid #000 !important;
+  }
+
+  .rb-hero {
+    border-radius: 0;
+    max-height: 3in;
+    width: auto;
+    max-width: 100%;
+  }
+
+  /* A step should not straddle a page break. */
+  .rb-section,
+  .rb-ingredient-group,
+  .rb-section li {
+    break-inside: avoid;
+  }
+
+  .rb-section h2 {
+    break-after: avoid;
+  }
+}

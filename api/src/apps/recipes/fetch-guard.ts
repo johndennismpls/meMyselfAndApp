@@ -1,0 +1,99 @@
+import { isIP } from 'node:net';
+import { lookup } from 'node:dns/promises';
+
+/**
+ * The SSRF guard (§4.1). The server fetches URLs that trace back to user input —
+ * a pasted link, or one a model read off the open web. Unguarded that is a
+ * request forgery primitive pointed at whatever else is on the host or the LAN.
+ *
+ * Pure apart from the DNS resolver, which is injectable so the tests can cover a
+ * hostname resolving to a private address without touching the network.
+ */
+
+export type GuardFailure =
+  'malformed' | 'scheme' | 'private-address' | 'unresolvable';
+
+export type GuardResult =
+  { ok: true; url: URL } | { ok: false; reason: GuardFailure };
+
+/** Matches `dns.lookup(host, { all: true })`. */
+export type Resolver = (host: string) => Promise<{ address: string }[]>;
+
+const defaultResolver: Resolver = (host) => lookup(host, { all: true });
+
+/**
+ * Loopback, private, link-local, unique-local, unspecified, and the IPv4-mapped
+ * IPv6 forms of all of them. Written out rather than pulled from a package
+ * because the list is short and the failure mode of a wrong one is severe.
+ */
+export function isBlockedAddress(address: string): boolean {
+  const family = isIP(address);
+  if (family === 0) return true;
+
+  if (family === 6) {
+    const v6 = address.toLowerCase().split('%')[0];
+    if (v6 === '::' || v6 === '::1') return true;
+    // Unique-local fc00::/7 and link-local fe80::/10.
+    if (/^f[cd]/.test(v6)) return true;
+    if (/^fe[89ab]/.test(v6)) return true;
+    // ::ffff:10.0.0.1 and friends — re-check as IPv4.
+    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(v6);
+    if (mapped) return isBlockedAddress(mapped[1]);
+    return false;
+  }
+
+  const [a, b] = address.split('.').map(Number);
+  if (a === 0) return true; // unspecified / "this network"
+  if (a === 10) return true; // 10/8
+  if (a === 127) return true; // loopback
+  if (a === 169 && b === 254) return true; // link-local, incl. the cloud metadata endpoint
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16/12
+  if (a === 192 && b === 168) return true; // 192.168/16
+  return false;
+}
+
+/**
+ * Validates one URL. Called on the initial URL *and* on every redirect hop — a
+ * public URL redirecting to 127.0.0.1 is the whole attack.
+ */
+export async function guardUrl(
+  raw: string,
+  resolver: Resolver = defaultResolver,
+): Promise<GuardResult> {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return { ok: false, reason: 'malformed' };
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return { ok: false, reason: 'scheme' };
+  }
+
+  // A literal IP in the host skips DNS entirely.
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  if (isIP(host) !== 0) {
+    return isBlockedAddress(host)
+      ? { ok: false, reason: 'private-address' }
+      : { ok: true, url };
+  }
+
+  let addresses: { address: string }[];
+  try {
+    addresses = await resolver(host);
+  } catch {
+    return { ok: false, reason: 'unresolvable' };
+  }
+  if (addresses.length === 0) return { ok: false, reason: 'unresolvable' };
+
+  // Any blocked address disqualifies the host: a name resolving to both a public
+  // and a private address would otherwise be a race we lose.
+  if (addresses.some((a) => isBlockedAddress(a.address))) {
+    return { ok: false, reason: 'private-address' };
+  }
+
+  return { ok: true, url };
+}
+
+export const MAX_REDIRECTS = 3;

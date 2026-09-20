@@ -37,11 +37,11 @@ All of this replaces the current `:root` block **and** the
 | Token | Value | Use |
 | --- | --- | --- |
 | `--bg` | `#16171d` | Page background. The floor; nothing sits behind it. |
-| `--surface` | `#1f2028` | Cards, control panels, inputs, textareas. One step up from the page. |
-| `--surface-2` | `#2a2c36` | Raised or hovered surfaces, table header rows, popovers. |
-| `--code-bg` | `#1f2028` | Inline `code` and code-like blocks. Same plane as `--surface`. |
+| `--surface` | `#1f2028` | Cards and control panels. One step up from the page. |
+| `--surface-2` | `#2a2c36` | Anything sitting *on* a panel: inputs, textareas, notices. Also hovered surfaces and popovers. |
+| `--code-bg` | `var(--surface)` | Inline `code` and code-like blocks. An alias, not a second value — it is the same plane as `--surface` and follows it. |
 | `--border` | `#2e303a` | Decorative separators — panel edges, dividers, rules. |
-| `--border-strong` | `#646978` | Borders that carry meaning: input and textarea outlines. Meets the 3:1 UI-contrast floor. |
+| `--border-strong` | `#767b8a` | Borders that carry meaning: input and textarea outlines. Meets the 3:1 UI floor on `--surface-2`, where inputs actually sit. |
 | `--text` | `#9ca3af` | Body copy, labels, secondary text. |
 | `--text-h` | `#f3f4f6` | Headings, input values, grid letters — anything that should read as primary. |
 | `--shadow` | `rgba(0,0,0,0.4) 0 10px 15px -3px, rgba(0,0,0,0.25) 0 4px 6px -2px` | Elevation on hover. |
@@ -63,9 +63,13 @@ interactive.
 
 | Token | Value | Use |
 | --- | --- | --- |
-| `--success` | `#4ade80` | Confirmation text, valid-state icons, found-word highlights. |
+| `--success` | `#4ade80` | Confirmation text, valid-state icons. |
 | `--success-bg` | `rgba(74,222,128,0.15)` | Fill behind a success message or a highlighted match. |
 | `--success-border` | `rgba(74,222,128,0.5)` | Border on a success panel. |
+
+These three are **declared but not yet consumed** — no screen in the app has a success or
+valid state today. The values are recorded and contrast-checked so the first one to need
+green does not invent a shade; do not read their presence as a feature that exists.
 
 ### 2.4 Red — errors only
 
@@ -75,7 +79,7 @@ interactive.
 | `--danger-bg` | `rgba(248,113,113,0.15)` | Fill behind an error panel. |
 
 Red is reserved for errors. It is not a destructive-action color here, and it is not a
-brand color. **`#c0392b` (`.ws-error`, `wordsearch.css:120`) is retired** — it scores 3.29:1
+brand color. **`#c0392b` (`.ws-error` in `wordsearch.css`) is retired** — it scores 3.29:1
 on `--bg`, below the 4.5:1 text floor, and fails outright on raised surfaces. `--danger`
 replaces it.
 
@@ -83,11 +87,13 @@ replaces it.
 
 | Token | Value | Use |
 | --- | --- | --- |
-| `--focus-ring` | `#c084fc` | Every `:focus-visible` outline, site-wide. |
+| `--focus-ring` | `var(--accent)` | Every `:focus-visible` outline, site-wide. Aliased to the accent so a palette change moves the ring with it; give it its own value the day the ring should diverge. |
 
 Focus is always `2px solid var(--focus-ring)` with `outline-offset: 2px`. It is never
 removed and never restyled per component — a keyboard user should be able to learn the
-ring once.
+ring once. This is enforced by a single bare `:focus-visible` rule in `web/src/index.css`;
+app stylesheets do not declare focus outlines at all, so every new interactive element is
+covered the moment it exists.
 
 ### 2.6 Measured contrast
 
@@ -100,7 +106,7 @@ Ratios against the surface each token is expected to appear on.
 | `--accent` `#c084fc` | 6.77 | 6.13 | 5.26 | AA as text and as UI |
 | `--success` `#4ade80` | 10.26 | 9.30 | 7.97 | AA everywhere |
 | `--danger` `#f87171` | 6.46 | 5.86 | 5.02 | AA everywhere |
-| `--border-strong` `#646978` | 3.26 | 2.96 | 2.54 | Meets 3:1 on `--bg` and `--surface`, where inputs live |
+| `--border-strong` `#767b8a` | 4.23 | 3.84 | 3.29 | Meets 3:1 on every surface, including `--surface-2` where inputs sit |
 | `--border` `#2e303a` | 1.36 | 1.24 | 1.06 | Decorative only — never the sole carrier of meaning |
 
 Re-run these before changing any value. They were computed with the WCAG 2.x relative
@@ -112,7 +118,7 @@ luminance formula.
 If a thing responds to a click, it is purple. If a thing is purple, it responds to a click.
 
 **Green means it worked, or it is valid.** Success messages, valid-input affordances,
-found-word highlighting in the word search. Never a button, never a link, never a heading.
+Never a button, never a link, never a heading.
 
 **Red means it is broken.** Validation failures and error messages. Nothing else.
 
@@ -140,11 +146,14 @@ word list textarea, inline `code` — not for UI chrome.
 ## 5. Component rules
 
 **Panels** (`.ws-controls` and its descendants): `--surface` background, `1px solid
-var(--border)`, `10px` radius.
+var(--border)`, `10px` radius. A panel always paints its background — a border alone
+leaves it reading as a wireframe rather than a card.
 
-**Inputs and textareas**: `--surface` background, `1px solid var(--border-strong)`,
-`--text-h` value text, `6px` radius. The stronger border is what makes the field edge
-findable — an input must never be distinguishable from its panel by background alone.
+**Inputs and textareas**: `--surface-2` background, `1px solid var(--border-strong)`,
+`--text-h` value text, `6px` radius. Inputs live *on* a panel, so they take the step above
+it: `--bg` < `--surface` (panel) < `--surface-2` (input). The stronger border is what makes
+the field edge findable — an input must never be distinguishable from its panel by
+background alone.
 
 **Primary buttons**: `--accent-bg` fill, `1px solid var(--accent-border)`, `--accent`
 text. On hover the border goes to `--accent`. Disabled is `opacity: 0.5` with
@@ -171,22 +180,29 @@ Any new printable app repeats the same override: reset background to `#fff`, tex
 `#000`, drop borders and layout constraints, and hide controls and chrome. Do not print
 accent colors — a purple link on paper is just grey.
 
-## 7. Implementation notes
+## 7. How the conversion landed
 
-1. **`web/src/index.css`** — replace the `:root` color block with §2, delete the entire
-   `@media (prefers-color-scheme: dark)` block, and set `color-scheme: dark` (not
-   `light dark`) so form controls, scrollbars, and the browser's own UI render dark.
-2. **`web/index.html`** — add `<meta name="color-scheme" content="dark">` in `<head>`, so
-   the browser paints the correct background before CSS parses and there is no white flash
-   on first load.
-3. **`wordsearch.css:120`** — `.ws-error` becomes `color: var(--danger)`.
-4. **`wordsearch.css`** — inputs and textareas move from `--border` to `--border-strong`;
-   their `background: var(--bg)` becomes `var(--surface)` so fields sit above the panel
-   rather than punching back through to the page.
-5. **`.ws-warning`** — currently `--code-bg`; keep it on `--surface`, and leave it neutral
-   grey. It is a notice, not an error.
-6. Nothing else needs to change. `HomePage.css` consumes only tokens and inherits the new
-   theme for free.
+A record of the decisions the dark-only switch encoded, so the reasoning survives the
+commit. All of it is in the code already — this is not a task list.
+
+1. **`web/src/index.css`** owns every value in §2 directly in `:root`. The
+   `@media (prefers-color-scheme: dark)` block was deleted rather than inverted, and
+   `color-scheme` is `dark` (not `light dark`) so form controls, scrollbars, and the
+   browser's own UI render dark.
+2. **`web/index.html`** carries `<meta name="color-scheme" content="dark">`, so the
+   browser paints the right background before CSS parses and there is no white flash on
+   first load. It is not redundant with the CSS declaration: the meta covers the pre-CSS
+   paint, the declaration is the durable one.
+3. **`.ws-controls`** paints `background: var(--surface)`. It previously had only a
+   border, so the panel read as a wireframe over the page.
+4. **Inputs and textareas** sit on `--surface-2` with a `--border-strong` edge, one plane
+   above the panel that contains them, rather than punching back through to `--bg`.
+5. **`.ws-error`** and **`.ws-warning`** consume `--danger` and `--surface-2`; the retired
+   `#c0392b` was the last raw screen color in an app stylesheet.
+6. **Focus** is one bare `:focus-visible` rule in `index.css` (§2.5). App stylesheets
+   declare no focus outlines, so there is nothing to keep in sync and nothing to forget on
+   a new element.
+7. `HomePage.css` consumes only tokens and inherited the new theme for free.
 
 ## 8. Out of scope
 

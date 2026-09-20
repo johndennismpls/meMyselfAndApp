@@ -5,6 +5,8 @@ import {
   Outlet,
 } from '@tanstack/react-router'
 import HomePage from './HomePage'
+import RecipeListPage from './apps/recipebox/RecipeListPage'
+import RecipePage from './apps/recipebox/RecipePage'
 import WordSearchPage from './apps/wordsearch/WordSearchPage'
 import { validateWordSearchSearch } from './apps/wordsearch/search'
 
@@ -24,7 +26,26 @@ const wordSearchRoute = createRoute({
   validateSearch: validateWordSearchSearch,
 })
 
-const routeTree = rootRoute.addChildren([homeRoute, wordSearchRoute])
+const recipeListRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/recipes',
+  component: RecipeListPage,
+})
+
+// The identifier is the serial id — /recipes/42. No slug, so no slug-vs-title
+// drift when a recipe is renamed.
+const recipeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/recipes/$id',
+  component: RecipePage,
+})
+
+const routeTree = rootRoute.addChildren([
+  homeRoute,
+  wordSearchRoute,
+  recipeListRoute,
+  recipeRoute,
+])
 
 export const router = createRouter({ routeTree, defaultPreload: 'intent' })
 
