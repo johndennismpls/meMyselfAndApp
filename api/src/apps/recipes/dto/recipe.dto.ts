@@ -116,3 +116,21 @@ export class FindResultDto {
   @ApiProperty() why: string;
   @ApiProperty({ type: [CandidateDto] }) alternates: CandidateDto[];
 }
+
+/** The standing preferences applied to every find. */
+export class RecipeSettingsDto {
+  @ApiProperty({
+    description:
+      'One standing instruction per entry, applied to every find request.',
+    example: ['No tree nuts', 'I only have a microwave'],
+    type: [String],
+  })
+  preferences: string[];
+
+  @ApiProperty({
+    description: 'Null until they have been saved once.',
+    nullable: true,
+    type: String,
+  })
+  updatedAt: string | null;
+}

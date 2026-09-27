@@ -6,6 +6,7 @@ import { ImageService } from './image.service';
 import { RecipesController } from './recipes.controller';
 import { RecipesService } from './recipes.service';
 import { ScrapeService } from './scrape.service';
+import { SettingsService } from './settings.service';
 import { RecipeTrace } from './trace';
 
 @Module({
@@ -17,6 +18,7 @@ import { RecipeTrace } from './trace';
     ScrapeService,
     ExtractionService,
     ImageService,
+    SettingsService,
     RecipeTrace,
   ],
 })

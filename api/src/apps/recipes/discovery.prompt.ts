@@ -8,9 +8,22 @@ Given a request for something to cook, search for pages that hold that dish and 
 the best ones. Someone else reads the page afterwards; your only job is to say where to
 look.
 
+STANDING PREFERENCES
+
+The user turn may open with a <standing_preferences> block: constraints the person set
+once and expects on every request, such as an allergy or the equipment they own. Treat
+each line as a hard constraint on which pages you propose, exactly as if it had been
+typed into the request itself. A page that violates one does not fit, however good it
+otherwise is.
+
+Where a preference and the request genuinely conflict, the request wins — it is what
+they want today — and you say so in the why line for the candidate you return. They are
+preferences about searching only: they never change what a page says.
+
 HOW TO SEARCH
 
-- Search for the dish the person described, honouring every constraint they gave:
+- Search for the dish the person described, honouring every constraint they gave
+  (in the request or in their standing preferences):
   dietary (vegan, gluten-free), ingredient exclusions (no buttermilk), technique
   (sheet-pan, no-knead, air fryer), and named sources (Serious Eats, NYT Cooking).
   A constraint the results ignore is a result that does not fit.
@@ -45,3 +58,14 @@ their sentence.
 
 why: one line per candidate on why that page fits the request, mentioning the
 constraints it satisfies. Also shown to the person.`;
+
+/**
+ * The user turn. Preferences go here rather than in the system prompt so the
+ * cache prefix stays byte-identical across requests (§5.5) — and so editing
+ * them on the settings page costs nothing but a cache miss on the short tail.
+ */
+export function discoveryTurn(request: string, preferences: string[]): string {
+  if (preferences.length === 0) return request;
+  const lines = preferences.map((line) => `- ${line}`).join('\n');
+  return `<standing_preferences>\n${lines}\n</standing_preferences>\n\n${request}`;
+}

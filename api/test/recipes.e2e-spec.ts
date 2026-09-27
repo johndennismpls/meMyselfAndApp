@@ -8,7 +8,7 @@ import { ANTHROPIC } from '../src/apps/recipes/anthropic.provider';
 import { ScrapeService } from '../src/apps/recipes/scrape.service';
 import { DRIZZLE } from '../src/database/database.constants';
 import type { DrizzleDB } from '../src/database/database.types';
-import { recipes } from '../src/database/schema';
+import { recipeSettings, recipes } from '../src/database/schema';
 
 /**
  * find → get → patch → delete against the real database, with both model stages
@@ -103,6 +103,7 @@ describe('/recipes', () => {
 
   afterEach(async () => {
     await db.delete(recipes);
+    await db.delete(recipeSettings);
   });
 
   afterAll(async () => {
@@ -191,6 +192,50 @@ describe('/recipes', () => {
       ingredients: [],
       requestText: null,
     });
+  });
+
+  it('answers with empty settings before anything has been saved', async () => {
+    // The migration creates the table, not the row.
+    const res = await request(app.getHttpServer())
+      .get('/recipes/settings')
+      .expect(200);
+    expect(res.body).toEqual({ preferences: [], updatedAt: null });
+  });
+
+  it('saves the standing preferences and reads them back', async () => {
+    const saved = await request(app.getHttpServer())
+      .put('/recipes/settings')
+      .send({
+        preferences: ['No tree nuts', '  ', ' I only have a microwave '],
+      })
+      .expect(200);
+
+    // Blank entries dropped, surrounding space trimmed.
+    expect(saved.body.preferences).toEqual([
+      'No tree nuts',
+      'I only have a microwave',
+    ]);
+    expect(saved.body.updatedAt).toEqual(expect.any(String));
+
+    const read = await request(app.getHttpServer())
+      .get('/recipes/settings')
+      .expect(200);
+    expect(read.body.preferences).toEqual(saved.body.preferences);
+
+    // A second PUT replaces the list rather than appending to it.
+    const replaced = await request(app.getHttpServer())
+      .put('/recipes/settings')
+      .send({ preferences: ['Nothing spicy'] })
+      .expect(200);
+    expect(replaced.body.preferences).toEqual(['Nothing spicy']);
+  });
+
+  it('rejects more preferences than the prompt should carry', async () => {
+    const res = await request(app.getHttpServer())
+      .put('/recipes/settings')
+      .send({ preferences: Array.from({ length: 21 }, (_, i) => `rule ${i}`) })
+      .expect(400);
+    expect(res.body.message).toBe('Keep it to 20 preferences or fewer.');
   });
 
   it('404s an image that was never downloaded', async () => {

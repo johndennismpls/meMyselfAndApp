@@ -48,6 +48,26 @@ export const ScrapeRequestSchema = z.object({
   url: z.string().trim().min(1).max(2000),
 });
 
+/**
+ * The standing preferences (§9.4). A PUT of the whole list, not a PATCH: the
+ * settings page edits a textarea and saves what is in it, and a removed line
+ * has to actually go.
+ */
+export const MAX_PREFERENCES = 20;
+
+export const UpdateSettingsSchema = z.object({
+  preferences: z
+    .array(z.string().max(200))
+    // A textarea ships blank lines and trailing spaces; neither belongs in a
+    // prompt. Tidying before the count means a trailing newline is not an error.
+    .transform((lines) => lines.map((line) => line.trim()).filter(Boolean))
+    .refine((lines) => lines.length <= MAX_PREFERENCES, {
+      message: `Keep it to ${MAX_PREFERENCES} preferences or fewer.`,
+    }),
+});
+
+export type UpdateSettingsInput = z.infer<typeof UpdateSettingsSchema>;
+
 export type CreateRecipeInput = z.infer<typeof CreateRecipeSchema>;
 export type UpdateRecipeInput = z.infer<typeof UpdateRecipeSchema>;
 
@@ -86,4 +106,13 @@ export class CreateRecipeDto {
 
 export class UpdateRecipeDto extends CreateRecipeDto {
   @ApiPropertyOptional() declare title: string;
+}
+
+export class UpdateSettingsDto {
+  @ApiProperty({
+    description: 'The full list. Blank entries are dropped on save.',
+    example: ['No tree nuts', 'I only have a microwave'],
+    type: [String],
+  })
+  preferences: string[];
 }

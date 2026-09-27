@@ -1,4 +1,10 @@
-import type { FindResult, Recipe, RecipeEdit, RecipeSummary } from './types'
+import type {
+  FindResult,
+  Recipe,
+  RecipeEdit,
+  RecipeSettings,
+  RecipeSummary,
+} from './types'
 
 /**
  * Every call to the API lives here; components never call fetch directly.
@@ -33,6 +39,11 @@ function json(method: string, body: unknown): RequestInit {
 export const recipeKeys = {
   all: ['recipes'] as const,
   detail: (id: number) => ['recipes', id] as const,
+  /**
+   * Deliberately not under `all`: a find invalidates every recipe key, and the
+   * standing preferences did not change just because a recipe was saved.
+   */
+  settings: ['recipe-settings'] as const,
 }
 
 export async function listRecipes(): Promise<RecipeSummary[]> {
@@ -51,6 +62,19 @@ export async function findRecipe(request: string): Promise<FindResult> {
 /** The ask box, pasted-URL path. Extraction only, so notably faster. */
 export async function scrapeRecipe(url: string): Promise<Recipe> {
   return unwrap(await fetch('/api/recipes/scrape', json('POST', { url })))
+}
+
+export async function getSettings(): Promise<RecipeSettings> {
+  return unwrap(await fetch('/api/recipes/settings'))
+}
+
+/** A PUT of the whole list: what you leave out is what you removed. */
+export async function updateSettings(
+  preferences: string[],
+): Promise<RecipeSettings> {
+  return unwrap(
+    await fetch('/api/recipes/settings', json('PUT', { preferences })),
+  )
 }
 
 export async function updateRecipe(id: number, edit: RecipeEdit): Promise<Recipe> {

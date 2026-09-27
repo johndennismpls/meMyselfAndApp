@@ -169,14 +169,21 @@ const response = await this.client.messages.parse({
     effort: 'medium',
     format: zodOutputFormat(Discovery, 'discovery'),
   },
-  messages: [{ role: 'user', content: userRequest }],
+  messages: [{ role: 'user', content: discoveryTurn(userRequest, preferences) }],
 })
 ```
+
+`discoveryTurn` is the one place the standing preferences (§9.4) enter the pipeline. They
+ride in the **user turn**, above the request, as a `<standing_preferences>` block of one
+line each — never in the system prompt, which has to stay byte-identical to keep the cache
+prefix (§5.5). With no preferences saved, the turn is the bare request, exactly as before.
 
 The system prompt tells it to:
 
 - Search for the dish the user described, honouring every constraint they gave (vegan,
-  no buttermilk, sheet-pan, Serious Eats).
+  no buttermilk, sheet-pan, Serious Eats) — in the request *or* in the standing
+  preferences, which are hard constraints on which pages it may propose. Where the two
+  genuinely conflict, today's request wins and the `why` line says so.
 - Prefer pages that are **a single recipe with an ingredient list and numbered steps**.
   Reject roundups ("23 Best Pancake Recipes"), video-only pages, and store pages.
 - Open promising results with `web_fetch` to confirm there is a real recipe on the page
@@ -458,6 +465,23 @@ well in the UI. Cut it too if you'd rather the record hold nothing but the recip
 No indexes beyond the primary key. There is no duplicate check to support (§7.2) and the
 list query is a single unfiltered `ORDER BY created_at DESC`.
 
+#### `recipe_settings` — the standing preferences
+
+```ts
+export const recipeSettings = pgTable('recipe_settings', {
+  id: integer('id').primaryKey().default(1),   // one row, always id 1
+  preferences: jsonb('preferences').$type<string[]>().notNull().default([]),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+```
+
+One row, because this is one person's recipe box and there is no user to key on. Lines
+rather than one blob, so the UI can count them and the prompt can render them as bullets.
+The migration creates the table, not the row, so `GET /recipes/settings` answers with the
+empty default until the first save; the write is an upsert on `id`.
+
+Nothing here is ever written onto a recipe: these are constraints on *searching* (§9.4).
+
 ### 6.2 Why `jsonb`, and what it costs later
 
 Ingredients and steps are ordered lists, always read and written whole; reordering them in
@@ -567,6 +591,12 @@ a recipe page containing log-shaped text can't forge a line.
 | `PUT` | `/recipes/:id/image` | multipart, field `image` | `RecipeDto` |
 | `DELETE` | `/recipes/:id/image` | — | `RecipeDto` |
 | `GET` | `/recipes/:id/image` | — | bytes, `Cache-Control: public, max-age=31536000, immutable` |
+| `GET` | `/recipes/settings` | — | `RecipeSettingsDto` — `{ preferences, updatedAt }` |
+| `PUT` | `/recipes/settings` | `{ preferences: string[] }` | `RecipeSettingsDto` |
+
+Both settings routes are declared **above** `GET /recipes/:id` in the controller: Nest
+matches in declaration order, and the `:id` route would otherwise swallow `settings` and
+400 on its `ParseIntPipe`.
 
 `FindResultDto` is `{ recipe: RecipeDto, interpretedAs, why, alternates: Candidate[] }` —
 the saved recipe plus the runners-up, so "try a different source" is one click and no
@@ -581,6 +611,8 @@ produce.
 
 ### 7.1 `/recipes/find` control flow
 
+0. Read the standing preferences (§9.4) and hand them to discovery. They shape the search
+   only: `requestText` on the row stays exactly what you typed.
 1. Discovery (§3). 422 on not-food, empty observed set, or no surviving candidate.
 2. For each candidate in rank order, up to 3: SSRF guard → fetch → clean → extract. On
    success, go to 4. On `is_recipe: false` or any fetch failure, log it and take the next.
@@ -653,9 +685,13 @@ personal app. Deferred (§13).
 ### 9.1 Routes
 
 ```
-/recipes         -> RecipeListPage
-/recipes/$id     -> RecipePage
+/recipes           -> RecipeListPage
+/recipes/settings  -> SettingsPage
+/recipes/$id       -> RecipePage
 ```
+
+`/recipes/settings` is a static path, so it outranks `/recipes/$id` however the two are
+ordered in the route tree.
 
 Added to `web/src/router.tsx` in the existing code-based style. The home tile links to
 `/recipes`, which needs a `recipebox` row in the `apps` table — a small seed migration,
@@ -719,7 +755,28 @@ against the loaded record.
 `--danger` copy. Per the styleguide, red marks errors — it is not a destructive-action
 color here, so delete gets no red button.
 
-### 9.4 Styling and print
+### 9.4 `/recipes/settings` — standing preferences
+
+The things that are true every time you ask for a recipe — *"No tree nuts"*, *"I only have
+a microwave"*, *"Nothing that takes more than 30 minutes"* — instead of retyping them into
+every request.
+
+One textarea, one preference per line, matching how steps and notes are edited on the
+recipe form (§9.3). **Save** is a `PUT` of the whole list: what you leave out is what you
+removed. Blank lines and surrounding space are dropped on save, and the cap is 20 — past
+that the request is refused with the copy the page already shows. Leaving with unsaved
+edits asks first, as the recipe form does.
+
+They apply to the **find** path only. A pasted URL is read as-is, so the ask box shows the
+line — *"Searching with your 2 preferences — No tree nuts, I only have a microwave"* — only
+when what you typed isn't a URL, linking to this page. Preferences are visible where they
+act, not only where they're set.
+
+Nothing about them touches a saved recipe: not the record, not `requestText`, not the
+edit form. They are a search-time constraint, and a recipe found under them is an ordinary
+recipe afterwards.
+
+### 9.5 Styling and print
 
 `web/src/apps/recipebox/recipebox.css`, tokens from `web/src/index.css` only, no new raw
 colors. Panels, inputs, and buttons follow styleguide §5. Ingredients and steps use the
@@ -778,6 +835,7 @@ api/src/
     image.service.ts                        (new)
     fetch-guard.ts                          (new)
     trace.ts                                (new: §6.4)
+    settings.service.ts                     (new: §9.4, the standing preferences)
     dto/                                    (new: Recipe, RecipeSummary, FindResult, Create, Update)
   app.module.ts                             (modified)
 api/.env.example                            (modified)
@@ -791,6 +849,7 @@ web/src/
     AskBox.tsx                              (new: §9.2, incl. the staged status line)
     RecipePage.tsx                          (new)
     RecipeForm.tsx                          (new)
+    SettingsPage.tsx                        (new: §9.4)
     recipebox.css                           (new)
 ```
 
@@ -804,6 +863,10 @@ CI is a bill and a flake.
   tool-result blocks at all fails closed; normalisation matches across `www.`, trailing
   slash, and `?utm_source=`; a `web_search_tool_result` whose `content` is an error object
   (not a list) doesn't throw.
+- `discovery.prompt.test.ts` — the standing preferences go in the user turn and the system
+  prompt stays free of them, so the cache prefix (§5.5) survives a settings edit.
+- `recipes.service.test.ts` also covers the hand-off: the saved preferences reach
+  discovery, an unset box sends an empty list, and neither changes `requestText`.
 - `fetch-guard.test.ts` — a table of hostile URLs: `file://`, `http://127.0.0.1`,
   `http://169.254.169.254/`, `http://[::1]`, a hostname resolving to `10.x`, and a public
   URL redirecting to a private one. All rejected.

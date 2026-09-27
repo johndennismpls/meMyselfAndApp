@@ -74,3 +74,14 @@ export type RecipeEdit = Partial<
     | 'totalMinutes'
   >
 >
+
+/**
+ * The standing preferences (§9.4) — "No tree nuts", "I only have a microwave".
+ * They shape the search on the find path and nothing else: no recipe carries
+ * them, and a pasted URL ignores them.
+ */
+export interface RecipeSettings {
+  preferences: string[]
+  /** Null until they have been saved once. */
+  updatedAt: string | null
+}

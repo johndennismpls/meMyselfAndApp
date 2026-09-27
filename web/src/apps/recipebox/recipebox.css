@@ -450,3 +450,23 @@
     break-after: avoid;
   }
 }
+
+/* ---- Preferences (§9.4) ---------------------------------------------- */
+
+/*
+ * The standing preferences are applied where you type, not where you set them,
+ * so the ask box says which ones are in play. Small and quiet: it is a
+ * reminder, not a control.
+ */
+.rb-ask-note {
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.rb-settings {
+  max-width: 60ch;
+}
+
+.rb-prose {
+  max-width: 60ch;
+}

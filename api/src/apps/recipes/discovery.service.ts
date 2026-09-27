@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ANTHROPIC } from './anthropic.provider';
-import { DISCOVERY_SYSTEM } from './discovery.prompt';
+import { DISCOVERY_SYSTEM, discoveryTurn } from './discovery.prompt';
 import { Discovery, type Candidate } from './discovery.schema';
 import { assertGrounded, fetchedPageText } from './grounding';
 import { RECIPE_MAX_TOKENS, RECIPE_MODEL } from './models';
@@ -37,7 +37,16 @@ export class DiscoveryService {
     this.maxCandidates = config.get<number>('RECIPE_MAX_CANDIDATES', 3);
   }
 
-  async discover(userRequest: string): Promise<DiscoveryResult> {
+  /**
+   * `preferences` are the standing lines from the settings page (§9.4) — the
+   * same constraints on every find, so they never reach the request text we
+   * store. An empty list leaves the turn exactly as it was before settings
+   * existed.
+   */
+  async discover(
+    userRequest: string,
+    preferences: string[] = [],
+  ): Promise<DiscoveryResult> {
     const response = await this.client.messages.parse({
       model: RECIPE_MODEL,
       max_tokens: RECIPE_MAX_TOKENS,
@@ -62,7 +71,9 @@ export class DiscoveryService {
         effort: 'medium',
         format: zodOutputFormat(Discovery),
       },
-      messages: [{ role: 'user', content: userRequest }],
+      messages: [
+        { role: 'user', content: discoveryTurn(userRequest, preferences) },
+      ],
     });
 
     if (response.stop_reason === 'refusal') {
@@ -96,6 +107,7 @@ export class DiscoveryService {
 
     this.trace.event('recipe.discovery', {
       interpretedAs: parsed.interpreted_as,
+      preferences,
       candidates: grounded.kept.map(summarise),
       groundingDropped: grounded.dropped.map(summarise),
       usage,

@@ -34,6 +34,7 @@ import {
   CandidateDto,
   FindResultDto,
   RecipeDto,
+  RecipeSettingsDto,
   RecipeSummaryDto,
 } from './dto/recipe.dto';
 import {
@@ -45,16 +46,23 @@ import {
   ScrapeRequestSchema,
   UpdateRecipeDto,
   UpdateRecipeSchema,
+  UpdateSettingsDto,
+  UpdateSettingsSchema,
   type CreateRecipeInput,
   type UpdateRecipeInput,
+  type UpdateSettingsInput,
 } from './dto/request.dto';
 import { RecipesService } from './recipes.service';
+import { SettingsService } from './settings.service';
 import { ZodBody } from './zod.pipe';
 
 @ApiTags('recipes')
 @Controller('recipes')
 export class RecipesController {
-  constructor(private readonly recipes: RecipesService) {}
+  constructor(
+    private readonly recipes: RecipesService,
+    private readonly settings: SettingsService,
+  ) {}
 
   @Post('find')
   @ApiOperation({
@@ -85,6 +93,33 @@ export class RecipesController {
     },
   ): Promise<RecipeDto> {
     return this.recipes.scrape(body.url);
+  }
+
+  /**
+   * Declared above `GET /recipes/:id` on purpose: Nest matches in declaration
+   * order, and the :id route would otherwise swallow this and 400 on the
+   * ParseIntPipe.
+   */
+  @Get('settings')
+  @ApiOperation({
+    summary: 'The standing preferences applied to every find request.',
+  })
+  @ApiOkResponse({ type: RecipeSettingsDto })
+  getSettings(): Promise<RecipeSettingsDto> {
+    return this.settings.get();
+  }
+
+  @Put('settings')
+  @ApiOperation({
+    summary: 'Replace the standing preferences with the list supplied.',
+    description: 'Blank entries are dropped; the list saved is the list used.',
+  })
+  @ApiOkResponse({ type: RecipeSettingsDto })
+  putSettings(
+    @Body(new ZodBody(UpdateSettingsSchema))
+    body: UpdateSettingsInput,
+  ): Promise<RecipeSettingsDto> {
+    return this.settings.update(body);
   }
 
   @Post()
@@ -171,3 +206,4 @@ void CreateRecipeDto;
 void ScrapeRequestDto;
 void FindRequestDto;
 void UpdateRecipeDto;
+void UpdateSettingsDto;

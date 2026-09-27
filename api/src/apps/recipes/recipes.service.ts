@@ -23,6 +23,7 @@ import type { ExtractedRecipe } from './extraction.schema';
 import { normaliseUrl } from './grounding';
 import { ImageService } from './image.service';
 import { ScrapeService, type CleanedPage } from './scrape.service';
+import { SettingsService } from './settings.service';
 import { RecipeTrace } from './trace';
 
 @Injectable()
@@ -33,6 +34,7 @@ export class RecipesService {
     private readonly scraper: ScrapeService,
     private readonly extraction: ExtractionService,
     private readonly images: ImageService,
+    private readonly settings: SettingsService,
     private readonly trace: RecipeTrace,
   ) {}
 
@@ -45,7 +47,10 @@ export class RecipesService {
   async find(request: string): Promise<FindResultDto> {
     this.trace.event('recipe.request', { path: 'find', requestText: request });
 
-    const discovered = await this.discovery.discover(request);
+    // The standing preferences shape the search only (§9.4). They are not part
+    // of what you typed, so `requestText` on the row stays exactly that.
+    const preferences = await this.settings.preferences();
+    const discovered = await this.discovery.discover(request, preferences);
     const attempts: { url: string; reason: string }[] = [];
 
     for (const candidate of discovered.candidates) {

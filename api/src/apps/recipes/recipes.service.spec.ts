@@ -7,6 +7,7 @@ import type { ExtractedRecipe } from './extraction.schema';
 import type { ImageService } from './image.service';
 import { RecipesService } from './recipes.service';
 import type { CleanedPage, ScrapeService } from './scrape.service';
+import type { SettingsService } from './settings.service';
 import { RecipeTrace } from './trace';
 
 /**
@@ -85,6 +86,8 @@ function fakeDb(): DrizzleDB {
 interface Stubs {
   /** Per-URL behaviour for the fetch+clean step. */
   scrape: Record<string, 'ok' | 'fail'>;
+  /** The saved standing preferences, if the box has any (§9.4). */
+  preferences?: string[];
   /** Per-URL behaviour for the extraction step. */
   extract: Record<string, 'recipe' | 'not-a-recipe'>;
   /** Page text web_fetch already pulled, for the §4.3 fallback. */
@@ -95,14 +98,25 @@ function build(stubs: Stubs) {
   const scraped: string[] = [];
   const extracted: string[] = [];
 
+  const discovered: { preferences: string[] }[] = [];
+
   const discovery = {
-    discover: (): Promise<DiscoveryResult> =>
-      Promise.resolve({
+    discover: (
+      _request: string,
+      preferences: string[],
+    ): Promise<DiscoveryResult> => {
+      discovered.push({ preferences });
+      return Promise.resolve({
         interpretedAs: 'homemade pancakes',
         candidates,
         fetchedText: stubs.fetchedText ?? new Map(),
-      }),
+      });
+    },
   } as unknown as DiscoveryService;
+
+  const settings = {
+    preferences: () => Promise.resolve(stubs.preferences ?? []),
+  } as unknown as SettingsService;
 
   const scraper = {
     scrape: (url: string) => {
@@ -145,10 +159,11 @@ function build(stubs: Stubs) {
     scraper,
     extraction,
     images,
+    settings,
     new RecipeTrace(),
   );
 
-  return { service, scraped, extracted };
+  return { service, scraped, extracted, discovered };
 }
 
 // The walk logs every attempt (§6.4); the failures here are expected, not noise.
@@ -174,6 +189,31 @@ describe('RecipesService.find — the candidate walk', () => {
       'https://two.test/pancakes',
       'https://three.test/pancakes',
     ]);
+  });
+
+  it('hands the saved preferences to discovery', async () => {
+    const { service, discovered } = build({
+      scrape: {},
+      extract: {},
+      preferences: ['No tree nuts', 'I only have a microwave'],
+    });
+
+    const result = await service.find('give me a brownie recipe');
+
+    expect(discovered).toEqual([
+      { preferences: ['No tree nuts', 'I only have a microwave'] },
+    ]);
+    // They shape the search, never the record: what you typed is what is
+    // stored (§9.4).
+    expect(result.recipe.requestText).toBe('give me a brownie recipe');
+  });
+
+  it('passes an empty list when nothing has been set', async () => {
+    const { service, discovered } = build({ scrape: {}, extract: {} });
+
+    await service.find('pancakes');
+
+    expect(discovered).toEqual([{ preferences: [] }]);
   });
 
   it('moves on when the first candidate 403s', async () => {

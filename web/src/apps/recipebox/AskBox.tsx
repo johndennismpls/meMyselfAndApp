@@ -1,7 +1,7 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from '@tanstack/react-router'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { findRecipe, recipeKeys, scrapeRecipe } from './api'
+import { findRecipe, getSettings, recipeKeys, scrapeRecipe } from './api'
 import { forgetFind, rememberFind } from './lastFind'
 import type { FindResult, Recipe } from './types'
 
@@ -60,6 +60,15 @@ export default function AskBox() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
 
+  // Standing preferences are applied server-side; this line is so you can see
+  // that they were, and reach them, from where they act (§9.4). A failed read
+  // says nothing rather than erroring the box — the find still works.
+  const settings = useQuery({
+    queryKey: recipeKeys.settings,
+    queryFn: getSettings,
+  })
+  const preferences = settings.data?.preferences ?? []
+
   const url = asUrl(text)
 
   const mutation = useMutation({
@@ -109,6 +118,17 @@ export default function AskBox() {
           {url ? 'Fetch' : 'Add'}
         </button>
       </div>
+
+      {/* The URL path is read as-is, so the preferences do not apply to it. */}
+      {!url && preferences.length > 0 && !mutation.isPending && (
+        <p className="rb-note rb-ask-note">
+          Searching with your {preferences.length}{' '}
+          {preferences.length === 1 ? 'preference' : 'preferences'} —{' '}
+          <Link to="/recipes/settings" className="rb-link">
+            {preferences.join(', ')}
+          </Link>
+        </p>
+      )}
 
       {status && (
         <p className="rb-status" role="status">

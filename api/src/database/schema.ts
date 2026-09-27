@@ -12,6 +12,9 @@ import {
 } from 'drizzle-orm/pg-core';
 import type { IngredientGroup } from '../apps/recipes/extraction.schema';
 
+/** The settings table holds exactly one row, and this is it. */
+export const SETTINGS_ROW_ID = 1;
+
 export const apps = pgTable('apps', {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),
@@ -73,3 +76,22 @@ export const recipes = pgTable('recipes', {
 
 export type Recipe = typeof recipes.$inferSelect;
 export type NewRecipe = typeof recipes.$inferInsert;
+
+/**
+ * Standing preferences for the find path (spec §3). One row, always id 1: this
+ * is one person's recipe box, so there is nothing to key on but the box itself.
+ *
+ * Lines rather than one blob — "no tree nuts", "I only have a microwave" — so
+ * the UI can show them as a list and the prompt can render them as bullets.
+ * They are constraints on *searching*, never on the record: nothing here is
+ * written into a recipe.
+ */
+export const recipeSettings = pgTable('recipe_settings', {
+  id: integer('id').primaryKey().default(SETTINGS_ROW_ID),
+  preferences: jsonb('preferences').$type<string[]>().notNull().default([]),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export type RecipeSettings = typeof recipeSettings.$inferSelect;

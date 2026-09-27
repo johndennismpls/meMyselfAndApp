@@ -33,9 +33,14 @@ export default function RecipeListPage() {
     <section className="rb">
       <header className="rb-header">
         <h1>Recipe Box</h1>
-        <Link to="/" className="rb-link">
-          ← Home
-        </Link>
+        <nav className="rb-actions">
+          <Link to="/recipes/settings" className="rb-link">
+            Preferences
+          </Link>
+          <Link to="/" className="rb-link">
+            ← Home
+          </Link>
+        </nav>
       </header>
 
       <AskBox />
