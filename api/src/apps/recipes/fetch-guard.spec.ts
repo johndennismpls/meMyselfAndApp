@@ -1,4 +1,9 @@
-import { guardUrl, isBlockedAddress, type Resolver } from './fetch-guard';
+import {
+  guardUrl,
+  isBlockedAddress,
+  pinnedLookup,
+  type Resolver,
+} from './fetch-guard';
 
 /**
  * §11.3. A table of hostile URLs, checked without touching the network — the
@@ -111,5 +116,59 @@ describe('guardUrl', () => {
       publicResolver,
     );
     expect(result.ok).toBe(true);
+  });
+
+  it('returns the resolved address(es) to pin the connection to', async () => {
+    const resolver: Resolver = () =>
+      Promise.resolve([{ address: '93.184.216.34' }]);
+    const result = await guardUrl('https://a.test/', resolver);
+    expect(result).toMatchObject({
+      ok: true,
+      addresses: [{ address: '93.184.216.34', family: 4 }],
+    });
+  });
+
+  it('returns the literal address when the host is one', async () => {
+    const result = await guardUrl('https://93.184.216.34/', publicResolver);
+    expect(result).toMatchObject({
+      ok: true,
+      addresses: [{ address: '93.184.216.34', family: 4 }],
+    });
+  });
+});
+
+describe('pinnedLookup', () => {
+  const addresses = [
+    { address: '93.184.216.34', family: 4 as const },
+    { address: '2606:2800:220:1:248:1893:25c8:1946', family: 6 as const },
+  ];
+
+  it('hands back the first pinned address for a single-result lookup', (done) => {
+    pinnedLookup(addresses)('ignored.test', {}, (err, address, family) => {
+      expect(err).toBeNull();
+      expect(address).toBe('93.184.216.34');
+      expect(family).toBe(4);
+      done();
+    });
+  });
+
+  it('hands back every pinned address when { all: true } is requested', (done) => {
+    pinnedLookup(addresses)(
+      'ignored.test',
+      { all: true },
+      (err, result) => {
+        expect(err).toBeNull();
+        expect(result).toEqual(addresses);
+        done();
+      },
+    );
+  });
+
+  it('ignores the hostname argument — the whole point is not to re-resolve it', (done) => {
+    pinnedLookup(addresses)('this-is-never-looked-up.invalid', {}, (err, address) => {
+      expect(err).toBeNull();
+      expect(address).toBe('93.184.216.34');
+      done();
+    });
   });
 });

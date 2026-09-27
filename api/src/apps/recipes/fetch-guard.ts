@@ -1,5 +1,6 @@
 import { isIP } from 'node:net';
-import { lookup } from 'node:dns/promises';
+import { lookup, type LookupOptions } from 'node:dns/promises';
+import { Agent, type Dispatcher } from 'node:undici';
 
 /**
  * The SSRF guard (§4.1). The server fetches URLs that trace back to user input —
@@ -13,8 +14,12 @@ import { lookup } from 'node:dns/promises';
 export type GuardFailure =
   'malformed' | 'scheme' | 'private-address' | 'unresolvable';
 
+/** One address this URL's host is allowed to resolve to, as checked by the guard. */
+export type PinnedAddress = { address: string; family: 4 | 6 };
+
 export type GuardResult =
-  { ok: true; url: URL } | { ok: false; reason: GuardFailure };
+  | { ok: true; url: URL; addresses: PinnedAddress[] }
+  | { ok: false; reason: GuardFailure };
 
 /** Matches `dns.lookup(host, { all: true })`. */
 export type Resolver = (host: string) => Promise<{ address: string }[]>;
@@ -83,26 +88,78 @@ export async function guardUrl(
   // A literal IP in the host skips DNS entirely.
   const host = url.hostname.replace(/^\[|\]$/g, '');
   if (isIP(host) !== 0) {
-    return isBlockedAddress(host)
-      ? { ok: false, reason: 'private-address' }
-      : { ok: true, url };
+    if (isBlockedAddress(host)) return { ok: false, reason: 'private-address' };
+    const family = isIP(host) === 6 ? 6 : 4;
+    return { ok: true, url, addresses: [{ address: host, family }] };
   }
 
-  let addresses: { address: string }[];
+  let resolved: { address: string }[];
   try {
-    addresses = await resolver(host);
+    resolved = await resolver(host);
   } catch {
     return { ok: false, reason: 'unresolvable' };
   }
-  if (addresses.length === 0) return { ok: false, reason: 'unresolvable' };
+  if (resolved.length === 0) return { ok: false, reason: 'unresolvable' };
 
   // Any blocked address disqualifies the host: a name resolving to both a public
   // and a private address would otherwise be a race we lose.
-  if (addresses.some((a) => isBlockedAddress(a.address))) {
+  if (resolved.some((a) => isBlockedAddress(a.address))) {
     return { ok: false, reason: 'private-address' };
   }
 
-  return { ok: true, url };
+  const addresses: PinnedAddress[] = resolved.map((a) => ({
+    address: a.address,
+    family: isIP(a.address) === 6 ? 6 : 4,
+  }));
+  return { ok: true, url, addresses };
 }
 
 export const MAX_REDIRECTS = 3;
+
+/**
+ * Pins a connection to the address(es) the guard already validated, instead of
+ * letting `fetch` re-resolve the hostname at connect time. Without this, an
+ * attacker controlling DNS for their own domain (TTL=0) can return a public
+ * address for the guard's lookup and then 127.0.0.1/169.254.169.254 for the
+ * real connection — the check and the connect race, and the attacker wins the
+ * race whenever they like.
+ *
+ * `node:undici` (not the npm package) on purpose: it's the exact class Node's
+ * global `fetch` checks the `dispatcher` option against, so there's no risk of
+ * a duplicate-but-incompatible `Dispatcher` class from a separately installed
+ * copy.
+ */
+export function pinnedLookup(
+  addresses: PinnedAddress[],
+): (
+  hostname: string,
+  options: LookupOptions & { all?: boolean },
+  callback: (
+    err: NodeJS.ErrnoException | null,
+    address: string | { address: string; family: number }[],
+    family?: number,
+  ) => void,
+) => void {
+  return (_hostname, options, callback) => {
+    if (options?.all) {
+      callback(
+        null,
+        addresses.map((a) => ({ address: a.address, family: a.family })),
+      );
+      return;
+    }
+    const [first] = addresses;
+    callback(null, first.address, first.family);
+  };
+}
+
+/**
+ * One dispatcher per guarded fetch. Callers must close it (`await
+ * dispatcher.close()`) once they're done reading the response body — closing
+ * it any earlier would cut the body stream off mid-read.
+ */
+export function pinnedDispatcher(addresses: PinnedAddress[]): Dispatcher {
+  return new Agent({
+    connect: { lookup: pinnedLookup(addresses) } as never,
+  });
+}

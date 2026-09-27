@@ -196,7 +196,10 @@ export class RecipesController {
     // file and updates the row — so this is safely immutable.
     res.type(mimeType);
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    res.sendFile(path, { root: process.cwd() });
+    // No `root` option: `path` is already absolute (ImageService resolves
+    // `RECIPE_MEDIA_DIR` at construction), and `send` joins `root` onto `path`
+    // unconditionally, which would double up on an already-absolute `path`.
+    res.sendFile(path);
   }
 }
 

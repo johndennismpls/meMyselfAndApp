@@ -1,9 +1,9 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { nanoid } from 'nanoid';
-import { guardUrl, MAX_REDIRECTS } from './fetch-guard';
+import { guardUrl, pinnedDispatcher, MAX_REDIRECTS } from './fetch-guard';
 
 export interface StoredImage {
   filename: string;
@@ -47,9 +47,11 @@ export class ImageService {
   readonly mediaDir: string;
 
   constructor(config: ConfigService) {
-    this.mediaDir = config.get<string>(
-      'RECIPE_MEDIA_DIR',
-      './var/media/recipes',
+    // Resolved up front: `res.sendFile(path)` requires an absolute path, and a
+    // relative `RECIPE_MEDIA_DIR` would otherwise resolve against whatever the
+    // process's cwd happens to be at request time rather than at boot.
+    this.mediaDir = resolve(
+      config.get<string>('RECIPE_MEDIA_DIR', './var/media/recipes'),
     );
   }
 
@@ -101,31 +103,39 @@ export class ImageService {
       const guard = await guardUrl(current);
       if (!guard.ok) return null;
 
-      const response = await fetch(guard.url, {
-        redirect: 'manual',
-        signal: AbortSignal.timeout(10_000),
-      });
+      // Pinned so the connection goes to the address the guard just checked,
+      // not whatever `fetch` re-resolves the hostname to a moment later.
+      const dispatcher = pinnedDispatcher(guard.addresses);
+      try {
+        const response = await fetch(guard.url, {
+          redirect: 'manual',
+          signal: AbortSignal.timeout(10_000),
+          dispatcher,
+        } as RequestInit);
 
-      if (response.status >= 300 && response.status < 400) {
-        const location = response.headers.get('location');
-        if (!location) return null;
-        current = new URL(location, guard.url).toString();
-        continue;
+        if (response.status >= 300 && response.status < 400) {
+          const location = response.headers.get('location');
+          if (!location) return null;
+          current = new URL(location, guard.url).toString();
+          continue;
+        }
+        if (!response.ok) return null;
+
+        const mimeType = (response.headers.get('content-type') ?? '')
+          .split(';')[0]
+          .trim()
+          .toLowerCase();
+        const type = TYPES[mimeType];
+        if (!type) return null;
+
+        const bytes = await readCappedBytes(response, MAX_IMAGE_BYTES);
+        if (!bytes || !type.magic(bytes)) return null;
+
+        const filename = await this.write(bytes, type.ext);
+        return { filename, mimeType, sourceUrl: guard.url.toString() };
+      } finally {
+        await dispatcher.close();
       }
-      if (!response.ok) return null;
-
-      const mimeType = (response.headers.get('content-type') ?? '')
-        .split(';')[0]
-        .trim()
-        .toLowerCase();
-      const type = TYPES[mimeType];
-      if (!type) return null;
-
-      const bytes = await readCappedBytes(response, MAX_IMAGE_BYTES);
-      if (!bytes || !type.magic(bytes)) return null;
-
-      const filename = await this.write(bytes, type.ext);
-      return { filename, mimeType, sourceUrl: guard.url.toString() };
     }
 
     return null;

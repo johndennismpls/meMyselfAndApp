@@ -8,7 +8,12 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as cheerio from 'cheerio';
-import { guardUrl, MAX_REDIRECTS, type Resolver } from './fetch-guard';
+import {
+  guardUrl,
+  pinnedDispatcher,
+  MAX_REDIRECTS,
+  type Resolver,
+} from './fetch-guard';
 
 export interface CleanedPage {
   text: string;
@@ -86,54 +91,64 @@ export class ScrapeService {
         );
       }
 
-      let response: Response;
+      // Pinned so the connection actually goes to the address the guard just
+      // checked, not whatever `fetch` re-resolves the hostname to a moment later.
+      const dispatcher = pinnedDispatcher(guard.addresses);
       try {
-        response = await fetch(guard.url, {
-          redirect: 'manual',
-          signal: AbortSignal.timeout(this.timeoutMs),
-          headers: {
-            // Some sites 403 a bare fetch. An honest UA gets further than none.
-            'user-agent':
-              'Mozilla/5.0 (compatible; meMyselfAndApp recipe box/0.1)',
-            accept: 'text/html,application/xhtml+xml',
-          },
-        });
-      } catch {
-        throw new BadGatewayException(
-          `Couldn't fetch that page (no response from ${guard.url.hostname}).`,
-        );
-      }
+        let response: Response;
+        try {
+          response = await fetch(guard.url, {
+            redirect: 'manual',
+            signal: AbortSignal.timeout(this.timeoutMs),
+            dispatcher,
+            headers: {
+              // Some sites 403 a bare fetch. An honest UA gets further than none.
+              'user-agent':
+                'Mozilla/5.0 (compatible; meMyselfAndApp recipe box/0.1)',
+              accept: 'text/html,application/xhtml+xml',
+            },
+          } as RequestInit);
+        } catch {
+          throw new BadGatewayException(
+            `Couldn't fetch that page (no response from ${guard.url.hostname}).`,
+          );
+        }
 
-      if (response.status >= 300 && response.status < 400) {
-        const location = response.headers.get('location');
-        if (!location) {
+        if (response.status >= 300 && response.status < 400) {
+          const location = response.headers.get('location');
+          if (!location) {
+            throw new BadGatewayException(
+              `Couldn't fetch that page (${response.status} from ${guard.url.hostname}).`,
+            );
+          }
+          current = new URL(location, guard.url).toString();
+          continue;
+        }
+
+        if (!response.ok) {
           throw new BadGatewayException(
             `Couldn't fetch that page (${response.status} from ${guard.url.hostname}).`,
           );
         }
-        current = new URL(location, guard.url).toString();
-        continue;
-      }
 
-      if (!response.ok) {
-        throw new BadGatewayException(
-          `Couldn't fetch that page (${response.status} from ${guard.url.hostname}).`,
-        );
-      }
+        const contentType = response.headers.get('content-type') ?? '';
+        const mime = contentType.split(';')[0].trim().toLowerCase();
+        if (mime !== 'text/html' && mime !== 'application/xhtml+xml') {
+          throw new UnsupportedMediaTypeException(
+            "That link isn't a web page.",
+          );
+        }
 
-      const contentType = response.headers.get('content-type') ?? '';
-      const mime = contentType.split(';')[0].trim().toLowerCase();
-      if (mime !== 'text/html' && mime !== 'application/xhtml+xml') {
-        throw new UnsupportedMediaTypeException("That link isn't a web page.");
+        const html = await readCapped(response, MAX_HTML_BYTES);
+        return {
+          html,
+          bytes: Buffer.byteLength(html),
+          ms: Date.now() - started,
+          finalUrl: guard.url.toString(),
+        };
+      } finally {
+        await dispatcher.close();
       }
-
-      const html = await readCapped(response, MAX_HTML_BYTES);
-      return {
-        html,
-        bytes: Buffer.byteLength(html),
-        ms: Date.now() - started,
-        finalUrl: guard.url.toString(),
-      };
     }
 
     throw new BadGatewayException(
