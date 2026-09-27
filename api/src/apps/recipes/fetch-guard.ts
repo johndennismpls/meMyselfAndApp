@@ -36,9 +36,18 @@ export function isBlockedAddress(address: string): boolean {
     // Unique-local fc00::/7 and link-local fe80::/10.
     if (/^f[cd]/.test(v6)) return true;
     if (/^fe[89ab]/.test(v6)) return true;
-    // ::ffff:10.0.0.1 and friends — re-check as IPv4.
-    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(v6);
-    if (mapped) return isBlockedAddress(mapped[1]);
+    // ::ffff:10.0.0.1 and friends — re-check as IPv4. The WHATWG URL parser
+    // never produces the dotted form, only the compressed hex form
+    // (::ffff:169.254.169.254 becomes ::ffff:a9fe:a9fe), so both need matching.
+    const mappedDotted = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(v6);
+    if (mappedDotted) return isBlockedAddress(mappedDotted[1]);
+    const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(v6);
+    if (mappedHex) {
+      const high = parseInt(mappedHex[1], 16);
+      const low = parseInt(mappedHex[2], 16);
+      const quad = [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.');
+      return isBlockedAddress(quad);
+    }
     return false;
   }
 
