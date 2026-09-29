@@ -8,6 +8,20 @@
       "when": 1789775070478,
       "tag": "0000_fast_mariko_yashida",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789927838779,
+      "tag": "0001_dear_gauntlet",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789941479087,
+      "tag": "0002_lonely_redwing",
+      "breakpoints": true
     }
   ]
 }

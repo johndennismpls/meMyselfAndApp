@@ -16,8 +16,9 @@ interface AppSummary {
  * renders as a disabled tile rather than a dead link. Typed, so a path that is
  * not in the route tree fails the build instead of 404ing at runtime.
  */
-const ROUTED_APPS: Record<string, '/wordsearch'> = {
+const ROUTED_APPS: Record<string, '/wordsearch' | '/recipes'> = {
   wordsearch: '/wordsearch',
+  recipebox: '/recipes',
 }
 
 async function fetchGreeting(): Promise<Greeting> {

@@ -8,11 +8,11 @@
   --bg: #16171d;
   --surface: #1f2028;
   --surface-2: #2a2c36;
-  --code-bg: #1f2028;
+  --code-bg: var(--surface);
 
   /* Borders: --border is decorative, --border-strong carries meaning (inputs). */
   --border: #2e303a;
-  --border-strong: #646978;
+  --border-strong: #767b8a;
 
   /* Text */
   --text: #9ca3af;
@@ -23,18 +23,18 @@
   --accent-bg: rgba(192, 132, 252, 0.15);
   --accent-border: rgba(192, 132, 252, 0.5);
 
-  /* Green — semantic. Success and validity only, never decoration. */
+  /* Green — semantic. Success and validity only, never decoration.
+     Declared ahead of its first consumer; see spec/styleguide.md §2.3. */
   --success: #4ade80;
   --success-bg: rgba(74, 222, 128, 0.15);
   --success-border: rgba(74, 222, 128, 0.5);
 
-  /* Red — errors only. */
+  /* Red — errors only. --danger-bg awaits its first error panel. */
   --danger: #f87171;
   --danger-bg: rgba(248, 113, 113, 0.15);
 
-  --focus-ring: #c084fc;
+  --focus-ring: var(--accent);
 
-  --social-bg: rgba(47, 48, 58, 0.5);
   --shadow:
     rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
 
@@ -71,6 +71,11 @@
 
 body {
   margin: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 h1,
