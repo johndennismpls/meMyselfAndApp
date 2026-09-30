@@ -33,6 +33,7 @@ import type {} from 'multer';
 import {
   CandidateDto,
   FindResultDto,
+  InspireResultDto,
   RecipeDto,
   RecipeSettingsDto,
   RecipeSummaryDto,
@@ -42,6 +43,8 @@ import {
   CreateRecipeSchema,
   FindRequestDto,
   FindRequestSchema,
+  InspireRequestDto,
+  InspireRequestSchema,
   ScrapeRequestDto,
   ScrapeRequestSchema,
   UpdateRecipeDto,
@@ -49,9 +52,11 @@ import {
   UpdateSettingsDto,
   UpdateSettingsSchema,
   type CreateRecipeInput,
+  type InspireRequestInput,
   type UpdateRecipeInput,
   type UpdateSettingsInput,
 } from './dto/request.dto';
+import { InspireService } from './inspire.service';
 import { RecipesService } from './recipes.service';
 import { SettingsService } from './settings.service';
 import { ZodBody } from './zod.pipe';
@@ -62,6 +67,7 @@ export class RecipesController {
   constructor(
     private readonly recipes: RecipesService,
     private readonly settings: SettingsService,
+    private readonly inspiration: InspireService,
   ) {}
 
   @Post('find')
@@ -93,6 +99,29 @@ export class RecipesController {
     },
   ): Promise<RecipeDto> {
     return this.recipes.scrape(body.url);
+  }
+
+  @Post('inspire')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Suggest something to cook, based on the recipes already saved.',
+    description: 'Nothing is saved; the suggestion is meant for the ask box.',
+  })
+  @ApiBody({ type: InspireRequestDto })
+  @ApiOkResponse({ type: InspireResultDto })
+  async inspire(
+    @Body(new ZodBody(InspireRequestSchema)) body: InspireRequestInput,
+  ): Promise<InspireResultDto> {
+    const [recipes, preferences] = await Promise.all([
+      this.recipes.findAll(),
+      this.settings.preferences(),
+    ]);
+    const prompt = await this.inspiration.suggest(
+      recipes,
+      preferences,
+      body.previous,
+    );
+    return { prompt };
   }
 
   /**

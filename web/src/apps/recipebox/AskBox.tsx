@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { findRecipe, getSettings, recipeKeys, scrapeRecipe } from './api'
+import { findRecipe, getSettings, inspireMe, recipeKeys, scrapeRecipe } from './api'
 import { forgetFind, rememberFind } from './lastFind'
 import type { FindResult, Recipe } from './types'
 
@@ -91,14 +91,27 @@ export default function AskBox() {
     },
   })
 
-  const status = useStagedStatus(mutation.isPending, url !== null)
+  // Suggestions shown so far, sent back so another click moves somewhere new.
+  const [suggested, setSuggested] = useState<string[]>([])
+  const inspire = useMutation({
+    mutationFn: () => inspireMe(suggested),
+    onSuccess: (prompt) => {
+      setText(prompt)
+      setSuggested((previous) => [...previous, prompt].slice(-20))
+    },
+  })
+
+  const busy = mutation.isPending || inspire.isPending
+  const findStatus = useStagedStatus(mutation.isPending, url !== null)
+  const status = inspire.isPending ? 'Looking through your recipes…' : findStatus
+  const error = !busy && (mutation.error ?? inspire.error)
 
   return (
     <form
       className="rb-ask"
       onSubmit={(event) => {
         event.preventDefault()
-        if (text.trim() && !mutation.isPending) mutation.mutate(text)
+        if (text.trim() && !busy) mutation.mutate(text)
       }}
     >
       <div className="rb-ask-row">
@@ -108,19 +121,32 @@ export default function AskBox() {
           onChange={(event) => setText(event.target.value)}
           placeholder="give me a homemade pancakes recipe"
           aria-label="What would you like to cook?"
-          disabled={mutation.isPending}
+          disabled={busy}
         />
         <button
           className="rb-button"
           type="submit"
-          disabled={mutation.isPending || text.trim() === ''}
+          disabled={busy || text.trim() === ''}
         >
           {url ? 'Fetch' : 'Add'}
+        </button>
+        {/* Fills the box only; sending it is still the person's call. */}
+        <button
+          className="rb-button"
+          type="button"
+          onClick={() => {
+            // Clear the last result's error before trying again.
+            mutation.reset()
+            inspire.mutate()
+          }}
+          disabled={busy}
+        >
+          Inspire me
         </button>
       </div>
 
       {/* The URL path is read as-is, so the preferences do not apply to it. */}
-      {!url && preferences.length > 0 && !mutation.isPending && (
+      {!url && preferences.length > 0 && !busy && (
         <p className="rb-note rb-ask-note">
           Searching with your {preferences.length}{' '}
           {preferences.length === 1 ? 'preference' : 'preferences'} —{' '}
@@ -135,9 +161,9 @@ export default function AskBox() {
           {status}
         </p>
       )}
-      {mutation.isError && !mutation.isPending && (
+      {error && (
         <p className="rb-error" role="alert">
-          {mutation.error.message}
+          {error.message}
         </p>
       )}
     </form>

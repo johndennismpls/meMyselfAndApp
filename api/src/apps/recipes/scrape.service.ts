@@ -14,6 +14,7 @@ import {
   MAX_REDIRECTS,
   type Resolver,
 } from './fetch-guard';
+import { fetch, type Response } from 'undici';
 
 export interface CleanedPage {
   text: string;
@@ -107,7 +108,7 @@ export class ScrapeService {
                 'Mozilla/5.0 (compatible; meMyselfAndApp recipe box/0.1)',
               accept: 'text/html,application/xhtml+xml',
             },
-          } as RequestInit);
+          });
         } catch {
           throw new BadGatewayException(
             `Couldn't fetch that page (no response from ${guard.url.hostname}).`,

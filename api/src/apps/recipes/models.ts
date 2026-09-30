@@ -10,3 +10,10 @@ export const RECIPE_MODEL = 'claude-opus-5';
 
 /** Non-streaming, one recipe out. See §5.3. */
 export const RECIPE_MAX_TOKENS = 16000;
+
+/**
+ * "Inspire me" writes one sentence and is clicked repeatedly, so it favours
+ * speed over depth. A separate constant for the same reason as above.
+ */
+export const INSPIRE_MODEL = 'claude-sonnet-5';
+export const INSPIRE_MAX_TOKENS = 1000;

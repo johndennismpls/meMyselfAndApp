@@ -1,6 +1,7 @@
 import { isIP } from 'node:net';
-import { lookup, type LookupOptions } from 'node:dns/promises';
-import { Agent, type Dispatcher } from 'node:undici';
+import type { LookupOptions } from 'node:dns';
+import { lookup } from 'node:dns/promises';
+import { Agent, type Dispatcher } from 'undici';
 
 /**
  * The SSRF guard (§4.1). The server fetches URLs that trace back to user input —
@@ -124,10 +125,9 @@ export const MAX_REDIRECTS = 3;
  * real connection — the check and the connect race, and the attacker wins the
  * race whenever they like.
  *
- * `node:undici` (not the npm package) on purpose: it's the exact class Node's
- * global `fetch` checks the `dispatcher` option against, so there's no risk of
- * a duplicate-but-incompatible `Dispatcher` class from a separately installed
- * copy.
+ * Callers must use `fetch` from the `undici` package (not the global one) so
+ * the `Agent` and `fetch` come from the same copy — Node doesn't expose its
+ * bundled undici as an importable module.
  */
 export function pinnedLookup(
   addresses: PinnedAddress[],
