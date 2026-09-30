@@ -134,3 +134,9 @@ export class RecipeSettingsDto {
   })
   updatedAt: string | null;
 }
+
+/** One suggestion for the ask box. */
+export class InspireResultDto {
+  @ApiProperty({ example: 'a lemony orzo salad with feta and herbs' })
+  prompt: string;
+}

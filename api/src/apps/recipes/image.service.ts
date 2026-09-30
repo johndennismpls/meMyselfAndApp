@@ -4,6 +4,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { nanoid } from 'nanoid';
 import { guardUrl, pinnedDispatcher, MAX_REDIRECTS } from './fetch-guard';
+import { fetch, type Response } from 'undici';
 
 export interface StoredImage {
   filename: string;
@@ -111,7 +112,7 @@ export class ImageService {
           redirect: 'manual',
           signal: AbortSignal.timeout(10_000),
           dispatcher,
-        } as RequestInit);
+        });
 
         if (response.status >= 300 && response.status < 400) {
           const location = response.headers.get('location');

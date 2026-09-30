@@ -68,6 +68,13 @@ export const UpdateSettingsSchema = z.object({
 
 export type UpdateSettingsInput = z.infer<typeof UpdateSettingsSchema>;
 
+/** What was already suggested this session, so "Inspire me" again moves on. */
+export const InspireRequestSchema = z.object({
+  previous: z.array(z.string().max(500)).max(20).default([]),
+});
+
+export type InspireRequestInput = z.infer<typeof InspireRequestSchema>;
+
 export type CreateRecipeInput = z.infer<typeof CreateRecipeSchema>;
 export type UpdateRecipeInput = z.infer<typeof UpdateRecipeSchema>;
 
@@ -106,6 +113,15 @@ export class CreateRecipeDto {
 
 export class UpdateRecipeDto extends CreateRecipeDto {
   @ApiPropertyOptional() declare title: string;
+}
+
+export class InspireRequestDto {
+  @ApiPropertyOptional({
+    description: 'Suggestions already shown this session, to avoid repeats.',
+    example: ['give me a smoky black bean chili with chipotle'],
+    type: [String],
+  })
+  previous?: string[];
 }
 
 export class UpdateSettingsDto {

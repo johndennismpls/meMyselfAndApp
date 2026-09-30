@@ -3,6 +3,7 @@ import { anthropicProvider } from './anthropic.provider';
 import { DiscoveryService } from './discovery.service';
 import { ExtractionService } from './extraction.service';
 import { ImageService } from './image.service';
+import { InspireService } from './inspire.service';
 import { RecipesController } from './recipes.controller';
 import { RecipesService } from './recipes.service';
 import { ScrapeService } from './scrape.service';
@@ -18,6 +19,7 @@ import { RecipeTrace } from './trace';
     ScrapeService,
     ExtractionService,
     ImageService,
+    InspireService,
     SettingsService,
     RecipeTrace,
   ],

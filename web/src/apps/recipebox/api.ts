@@ -64,6 +64,14 @@ export async function scrapeRecipe(url: string): Promise<Recipe> {
   return unwrap(await fetch('/api/recipes/scrape', json('POST', { url })))
 }
 
+/** "Inspire me": one suggestion for the ask box. Nothing is saved. */
+export async function inspireMe(previous: string[]): Promise<string> {
+  const result = await unwrap<{ prompt: string }>(
+    await fetch('/api/recipes/inspire', json('POST', { previous })),
+  )
+  return result.prompt
+}
+
 export async function getSettings(): Promise<RecipeSettings> {
   return unwrap(await fetch('/api/recipes/settings'))
 }
