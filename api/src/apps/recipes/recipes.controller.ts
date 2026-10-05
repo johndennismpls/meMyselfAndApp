@@ -56,19 +56,13 @@ import {
   type UpdateRecipeInput,
   type UpdateSettingsInput,
 } from './dto/request.dto';
-import { InspireService } from './inspire.service';
 import { RecipesService } from './recipes.service';
-import { SettingsService } from './settings.service';
 import { ZodBody } from './zod.pipe';
 
 @ApiTags('recipes')
 @Controller('recipes')
 export class RecipesController {
-  constructor(
-    private readonly recipes: RecipesService,
-    private readonly settings: SettingsService,
-    private readonly inspiration: InspireService,
-  ) {}
+  constructor(private readonly recipes: RecipesService) {}
 
   @Post('find')
   @ApiOperation({
@@ -112,16 +106,7 @@ export class RecipesController {
   async inspire(
     @Body(new ZodBody(InspireRequestSchema)) body: InspireRequestInput,
   ): Promise<InspireResultDto> {
-    const [recipes, preferences] = await Promise.all([
-      this.recipes.findAll(),
-      this.settings.preferences(),
-    ]);
-    const prompt = await this.inspiration.suggest(
-      recipes,
-      preferences,
-      body.previous,
-    );
-    return { prompt };
+    return { prompt: await this.recipes.inspire(body.previous) };
   }
 
   /**
@@ -135,7 +120,7 @@ export class RecipesController {
   })
   @ApiOkResponse({ type: RecipeSettingsDto })
   getSettings(): Promise<RecipeSettingsDto> {
-    return this.settings.get();
+    return this.recipes.getSettings();
   }
 
   @Put('settings')
@@ -148,7 +133,7 @@ export class RecipesController {
     @Body(new ZodBody(UpdateSettingsSchema))
     body: UpdateSettingsInput,
   ): Promise<RecipeSettingsDto> {
-    return this.settings.update(body);
+    return this.recipes.updateSettings(body);
   }
 
   @Post()

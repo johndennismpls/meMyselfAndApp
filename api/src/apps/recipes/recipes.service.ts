@@ -15,13 +15,19 @@ import type {
   CandidateDto,
   FindResultDto,
   RecipeDto,
+  RecipeSettingsDto,
   RecipeSummaryDto,
 } from './dto/recipe.dto';
-import type { CreateRecipeInput, UpdateRecipeInput } from './dto/request.dto';
+import type {
+  CreateRecipeInput,
+  UpdateRecipeInput,
+  UpdateSettingsInput,
+} from './dto/request.dto';
 import { ExtractionService } from './extraction.service';
 import type { ExtractedRecipe } from './extraction.schema';
 import { normaliseUrl } from './grounding';
 import { ImageService } from './image.service';
+import { InspireService } from './inspire.service';
 import { ScrapeService, type CleanedPage } from './scrape.service';
 import { SettingsService } from './settings.service';
 import { RecipeTrace } from './trace';
@@ -35,6 +41,7 @@ export class RecipesService {
     private readonly extraction: ExtractionService,
     private readonly images: ImageService,
     private readonly settings: SettingsService,
+    private readonly inspiration: InspireService,
     private readonly trace: RecipeTrace,
   ) {}
 
@@ -257,6 +264,25 @@ export class RecipesService {
       why: winner.why,
       alternates: all.filter((c) => c.url !== winner.url).map(toCandidateDto),
     };
+  }
+
+  /** "Inspire me": a suggestion for the ask box, drawn from the box itself. */
+  async inspire(previous: string[]): Promise<string> {
+    const [recipes, preferences] = await Promise.all([
+      this.findAll(),
+      this.settings.preferences(),
+    ]);
+    return this.inspiration.suggest(recipes, preferences, previous);
+  }
+
+  // ---- standing preferences (§9.4) ---------------------------------------
+
+  getSettings(): Promise<RecipeSettingsDto> {
+    return this.settings.get();
+  }
+
+  updateSettings(input: UpdateSettingsInput): Promise<RecipeSettingsDto> {
+    return this.settings.update(input);
   }
 
   // ---- plain CRUD -------------------------------------------------------

@@ -5,6 +5,7 @@ import type { Candidate } from './discovery.schema';
 import type { ExtractionService } from './extraction.service';
 import type { ExtractedRecipe } from './extraction.schema';
 import type { ImageService } from './image.service';
+import type { InspireService } from './inspire.service';
 import { RecipesService } from './recipes.service';
 import type { CleanedPage, ScrapeService } from './scrape.service';
 import type { SettingsService } from './settings.service';
@@ -160,6 +161,7 @@ function build(stubs: Stubs) {
     extraction,
     images,
     settings,
+    {} as InspireService,
     new RecipeTrace(),
   );
 
