@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import type Anthropic from '@anthropic-ai/sdk';
+import { ClaudeRepository } from './claude.repository';
 import { ExtractionService } from './extraction.service';
 import { EXTRACTION_SYSTEM } from './extraction.prompt';
 import type { CleanedPage } from './scrape.service';
@@ -56,7 +57,13 @@ function serviceWith(response: unknown): {
     return Promise.resolve(response);
   };
   const client = { messages: { parse } } as unknown as Anthropic;
-  return { service: new ExtractionService(client, new RecipeTrace()), calls };
+  return {
+    service: new ExtractionService(
+      new ClaudeRepository(client),
+      new RecipeTrace(),
+    ),
+    calls,
+  };
 }
 
 // Extraction emits its §6.4 events; trace.spec.ts is where their shape is tested.

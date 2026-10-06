@@ -6,6 +6,7 @@ import type { ExtractionService } from './extraction.service';
 import type { ExtractedRecipe } from './extraction.schema';
 import type { ImageService } from './image.service';
 import type { InspireService } from './inspire.service';
+import { RecipesRepository } from './recipes.repository';
 import { RecipesService } from './recipes.service';
 import type { CleanedPage, ScrapeService } from './scrape.service';
 import type { SettingsService } from './settings.service';
@@ -155,7 +156,7 @@ function build(stubs: Stubs) {
   } as unknown as ImageService;
 
   const service = new RecipesService(
-    fakeDb(),
+    new RecipesRepository(fakeDb()),
     discovery,
     scraper,
     extraction,

@@ -1,14 +1,10 @@
 import {
   HttpException,
-  Inject,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { desc, eq } from 'drizzle-orm';
-import { DRIZZLE } from '../../database/database.constants';
-import type { DrizzleDB } from '../../database/database.types';
-import { recipes, type Recipe } from '../../database/schema';
+import type { Recipe } from '../../database/schema';
 import { DiscoveryService } from './discovery.service';
 import type { Candidate } from './discovery.schema';
 import type {
@@ -28,6 +24,7 @@ import type { ExtractedRecipe } from './extraction.schema';
 import { normaliseUrl } from './grounding';
 import { ImageService } from './image.service';
 import { InspireService } from './inspire.service';
+import { RecipesRepository } from './recipes.repository';
 import { ScrapeService, type CleanedPage } from './scrape.service';
 import { SettingsService } from './settings.service';
 import { RecipeTrace } from './trace';
@@ -35,7 +32,7 @@ import { RecipeTrace } from './trace';
 @Injectable()
 export class RecipesService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: DrizzleDB,
+    private readonly repository: RecipesRepository,
     private readonly discovery: DiscoveryService,
     private readonly scraper: ScrapeService,
     private readonly extraction: ExtractionService,
@@ -218,25 +215,22 @@ export class RecipesService {
       page.canonicalUrl ?? baseUrl,
     );
 
-    const [row] = await this.db
-      .insert(recipes)
-      .values({
-        title: extracted.title,
-        description: extracted.description,
-        ingredients: extracted.ingredients,
-        steps: extracted.steps,
-        notes: extracted.notes,
-        origin: extracted.origin,
-        servings: extracted.servings,
-        yieldText: extracted.yield_text,
-        prepMinutes: extracted.prep_minutes,
-        cookMinutes: extracted.cook_minutes,
-        totalMinutes: extracted.total_minutes,
-        imageFilename: image?.filename ?? null,
-        imageMimeType: image?.mimeType ?? null,
-        requestText,
-      })
-      .returning();
+    const row = await this.repository.insert({
+      title: extracted.title,
+      description: extracted.description,
+      ingredients: extracted.ingredients,
+      steps: extracted.steps,
+      notes: extracted.notes,
+      origin: extracted.origin,
+      servings: extracted.servings,
+      yieldText: extracted.yield_text,
+      prepMinutes: extracted.prep_minutes,
+      cookMinutes: extracted.cook_minutes,
+      totalMinutes: extracted.total_minutes,
+      imageFilename: image?.filename ?? null,
+      imageMimeType: image?.mimeType ?? null,
+      requestText,
+    });
 
     this.trace.bind(row.id);
     // The only record that this recipe came from this page (§1.3).
@@ -288,30 +282,24 @@ export class RecipesService {
   // ---- plain CRUD -------------------------------------------------------
 
   async create(input: CreateRecipeInput): Promise<RecipeDto> {
-    const [row] = await this.db
-      .insert(recipes)
-      .values({
-        title: input.title,
-        description: input.description ?? null,
-        ingredients: input.ingredients ?? [],
-        steps: input.steps ?? [],
-        notes: input.notes ?? [],
-        origin: input.origin ?? null,
-        servings: input.servings ?? null,
-        yieldText: input.yieldText ?? null,
-        prepMinutes: input.prepMinutes ?? null,
-        cookMinutes: input.cookMinutes ?? null,
-        totalMinutes: input.totalMinutes ?? null,
-      })
-      .returning();
+    const row = await this.repository.insert({
+      title: input.title,
+      description: input.description ?? null,
+      ingredients: input.ingredients ?? [],
+      steps: input.steps ?? [],
+      notes: input.notes ?? [],
+      origin: input.origin ?? null,
+      servings: input.servings ?? null,
+      yieldText: input.yieldText ?? null,
+      prepMinutes: input.prepMinutes ?? null,
+      cookMinutes: input.cookMinutes ?? null,
+      totalMinutes: input.totalMinutes ?? null,
+    });
     return toDto(row);
   }
 
   async findAll(): Promise<RecipeSummaryDto[]> {
-    const rows = await this.db
-      .select()
-      .from(recipes)
-      .orderBy(desc(recipes.createdAt));
+    const rows = await this.repository.findAll();
     return rows.map((row) => ({
       id: row.id,
       title: row.title,
@@ -328,18 +316,14 @@ export class RecipesService {
   }
 
   async update(id: number, input: UpdateRecipeInput): Promise<RecipeDto> {
-    await this.row(id);
-    const [row] = await this.db
-      .update(recipes)
-      .set({ ...input, updatedAt: new Date() })
-      .where(eq(recipes.id, id))
-      .returning();
+    const row = await this.repository.update(id, input);
+    if (!row) throw notFound(id);
     return toDto(row);
   }
 
   async remove(id: number): Promise<void> {
     const row = await this.row(id);
-    await this.db.delete(recipes).where(eq(recipes.id, id));
+    await this.repository.delete(id);
     await this.images.remove(row.imageFilename);
   }
 
@@ -350,15 +334,11 @@ export class RecipesService {
   ): Promise<RecipeDto> {
     const existing = await this.row(id);
     const stored = await this.images.store(buffer, mimeType);
-    const [row] = await this.db
-      .update(recipes)
-      .set({
-        imageFilename: stored.filename,
-        imageMimeType: stored.mimeType,
-        updatedAt: new Date(),
-      })
-      .where(eq(recipes.id, id))
-      .returning();
+    const row = await this.repository.update(id, {
+      imageFilename: stored.filename,
+      imageMimeType: stored.mimeType,
+    });
+    if (!row) throw notFound(id);
     // The old file goes after the row updates, never before.
     await this.images.remove(existing.imageFilename);
     return toDto(row);
@@ -366,11 +346,11 @@ export class RecipesService {
 
   async clearImage(id: number): Promise<RecipeDto> {
     const existing = await this.row(id);
-    const [row] = await this.db
-      .update(recipes)
-      .set({ imageFilename: null, imageMimeType: null, updatedAt: new Date() })
-      .where(eq(recipes.id, id))
-      .returning();
+    const row = await this.repository.update(id, {
+      imageFilename: null,
+      imageMimeType: null,
+    });
+    if (!row) throw notFound(id);
     await this.images.remove(existing.imageFilename);
     return toDto(row);
   }
@@ -386,14 +366,14 @@ export class RecipesService {
   }
 
   private async row(id: number): Promise<Recipe> {
-    const [row] = await this.db
-      .select()
-      .from(recipes)
-      .where(eq(recipes.id, id))
-      .limit(1);
-    if (!row) throw new NotFoundException(`No recipe ${id}.`);
+    const row = await this.repository.findById(id);
+    if (!row) throw notFound(id);
     return row;
   }
+}
+
+function notFound(id: number): NotFoundException {
+  return new NotFoundException(`No recipe ${id}.`);
 }
 
 function toDto(row: Recipe): RecipeDto {
