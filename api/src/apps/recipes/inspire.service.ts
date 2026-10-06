@@ -1,12 +1,9 @@
-import type Anthropic from '@anthropic-ai/sdk';
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
-import { BadGatewayException, Inject, Injectable } from '@nestjs/common';
+import { BadGatewayException, Injectable } from '@nestjs/common';
 import { z } from 'zod';
-import { ANTHROPIC } from './anthropic.provider';
+import { ClaudeRepository } from './claude.repository';
 import type { RecipeSummaryDto } from './dto/recipe.dto';
 import { INSPIRE_SYSTEM, inspireTurn } from './inspire.prompt';
-import { INSPIRE_MAX_TOKENS, INSPIRE_MODEL } from './models';
-import { RecipeTrace, usageOf } from './trace';
+import { RecipeTrace } from './trace';
 
 const Inspiration = z.object({
   /** One sentence, ready to drop into the ask box. */
@@ -21,9 +18,9 @@ const Inspiration = z.object({
 @Injectable()
 export class InspireService {
   constructor(
-    @Inject(ANTHROPIC) private readonly client: Anthropic,
+    private readonly claude: ClaudeRepository,
     private readonly trace: RecipeTrace,
-  ) {}
+  ) { }
 
   async suggest(
     recipes: RecipeSummaryDto[],
@@ -32,35 +29,23 @@ export class InspireService {
   ): Promise<string> {
     let response;
     try {
-      response = await this.client.messages.parse({
-        model: INSPIRE_MODEL,
-        max_tokens: INSPIRE_MAX_TOKENS,
-        system: [
-          {
-            type: 'text',
-            text: INSPIRE_SYSTEM,
-            cache_control: { type: 'ephemeral' },
-          },
-        ],
-        output_config: { format: zodOutputFormat(Inspiration) },
-        messages: [
-          {
-            role: 'user',
-            content: inspireTurn(recipes, preferences, previous),
-          },
-        ],
+      response = await this.claude.parse({
+        maxTokens: 1000,
+        system: INSPIRE_SYSTEM,
+        user: inspireTurn(recipes, preferences, previous),
+        schema: Inspiration,
       });
     } catch {
       throw new BadGatewayException("Couldn't think of anything. Try again.");
     }
 
-    const prompt = response.parsed_output?.prompt.trim();
+    const prompt = response.parsed?.prompt.trim();
     this.trace.event('recipe.inspire', {
       recipes: recipes.length,
       previous: previous.length,
       prompt: prompt ?? null,
-      usage: usageOf(response.usage, INSPIRE_MODEL),
-      stopReason: response.stop_reason,
+      usage: response.usage,
+      stopReason: response.stopReason,
     });
 
     if (!prompt) {

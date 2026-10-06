@@ -30,13 +30,42 @@ export class RecipeTrace {
   }
 
   event(name: string, fields: Record<string, unknown>): void {
-    this.logger.log({
+    this.logger.log(this.line(name, fields));
+  }
+
+  /**
+   * The same line at error level, with what was thrown under `error`. Its
+   * message is a structured field like any other — an SDK error can quote the
+   * page back at us.
+   */
+  error(
+    name: string,
+    error: unknown,
+    fields: Record<string, unknown> = {},
+  ): void {
+    this.logger.error(
+      { ...this.line(name, fields), error: summariseError(error) },
+      error instanceof Error ? error.stack : undefined,
+    );
+  }
+
+  private line(
+    name: string,
+    fields: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return {
       event: name,
       traceId: this.traceId,
       ...(this.recipeId !== null ? { recipeId: this.recipeId } : {}),
       ...fields,
-    });
+    };
   }
+}
+
+function summariseError(error: unknown): { name: string; message: string } {
+  return error instanceof Error
+    ? { name: error.name, message: error.message }
+    : { name: 'NonError', message: String(error) };
 }
 
 /** Pulls the four numbers worth keeping off an SDK usage object (§5.4). */

@@ -160,7 +160,7 @@ ever grows an `ingredients` array, the guarantee in §1.1 is gone.
 
 ```ts
 const response = await this.client.messages.parse({
-  model: RECIPE_MODEL,                    // 'claude-opus-5', from models.ts
+  model: RECIPE_MODEL,                    // 'claude-opus-5', from claude.repository.ts
   max_tokens: 16000,
   system: [{ type: 'text', text: DISCOVERY_SYSTEM, cache_control: { type: 'ephemeral' } }],
   thinking: { type: 'adaptive' },
@@ -410,8 +410,8 @@ So **roughly $0.25–0.50 per find**, and a pasted URL is the extraction row alo
 is billed per search on top of tokens — check current pricing rather than trusting a number
 written here.
 
-**The model is hardcoded.** `api/src/apps/recipes/models.ts` exports a single
-`RECIPE_MODEL = 'claude-opus-5'` that both stages import. It is not an env var, not a
+**The model is hardcoded.** `api/src/apps/recipes/claude.repository.ts` holds a single
+`RECIPE_MODEL = 'claude-opus-5'` that every call uses. It is not an env var, not a
 request parameter, and not a user setting — changing models changes output quality in ways
 only a prompt-and-eval pass can judge (§11.3's golden script), so it should be a commit,
 not a config change someone makes at runtime.
