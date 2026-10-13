@@ -86,8 +86,11 @@ function fakeDb(): DrizzleDB {
 }
 
 interface Stubs {
-  /** Per-URL behaviour for the fetch+clean step. */
-  scrape: Record<string, 'ok' | 'fail'>;
+  /**
+   * Per-URL behaviour for the fetch+clean step. `slow` lands a beat later;
+   * `hang` never lands, only rejects when aborted.
+   */
+  scrape: Record<string, 'ok' | 'fail' | 'slow' | 'hang'>;
   /** The saved standing preferences, if the box has any (§9.4). */
   preferences?: string[];
   /** Per-URL behaviour for the extraction step. */
@@ -99,6 +102,7 @@ interface Stubs {
 function build(stubs: Stubs) {
   const scraped: string[] = [];
   const extracted: string[] = [];
+  const signals = new Map<string, AbortSignal>();
 
   const discovered: { preferences: string[] }[] = [];
 
@@ -121,8 +125,27 @@ function build(stubs: Stubs) {
   } as unknown as SettingsService;
 
   const scraper = {
-    scrape: (url: string) => {
+    scrape: (url: string, signal: AbortSignal) => {
       scraped.push(url);
+      signals.set(url, signal);
+      const result = {
+        page,
+        fetched: { html: '', bytes: 500, ms: 12, finalUrl: url },
+      };
+      if (stubs.scrape[url] === 'hang') {
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason));
+        });
+      }
+      if (stubs.scrape[url] === 'slow') {
+        return new Promise((resolve, reject) => {
+          const timer = setTimeout(() => resolve(result), 10);
+          signal.addEventListener('abort', () => {
+            clearTimeout(timer);
+            reject(signal.reason);
+          });
+        });
+      }
       if (stubs.scrape[url] === 'fail') {
         return Promise.reject(
           new BadGatewayException(
@@ -130,10 +153,7 @@ function build(stubs: Stubs) {
           ),
         );
       }
-      return Promise.resolve({
-        page,
-        fetched: { html: '', bytes: 500, ms: 12, finalUrl: url },
-      });
+      return Promise.resolve(result);
     },
   } as unknown as ScrapeService;
 
@@ -155,6 +175,7 @@ function build(stubs: Stubs) {
     remove: () => Promise.resolve(),
   } as unknown as ImageService;
 
+  const trace = new RecipeTrace();
   const service = new RecipesService(
     new RecipesRepository(fakeDb()),
     discovery,
@@ -163,10 +184,10 @@ function build(stubs: Stubs) {
     images,
     settings,
     {} as InspireService,
-    new RecipeTrace(),
+    trace,
   );
 
-  return { service, scraped, extracted, discovered };
+  return { service, scraped, extracted, discovered, signals, trace };
 }
 
 // The walk logs every attempt (§6.4); the failures here are expected, not noise.
@@ -182,7 +203,8 @@ describe('RecipesService.find — the candidate walk', () => {
 
     const result = await service.find('give me a homemade pancakes recipe');
 
-    expect(scraped).toEqual(['https://one.test/pancakes']);
+    // Every fetch starts at once; they cost time, not money.
+    expect(scraped).toEqual(candidates.map((c) => c.url));
     expect(result.recipe.title).toBe('Fluffy Pancakes');
     expect(result.interpretedAs).toBe('homemade pancakes');
     expect(result.why).toBe('first');
@@ -220,17 +242,13 @@ describe('RecipesService.find — the candidate walk', () => {
   });
 
   it('moves on when the first candidate 403s', async () => {
-    const { service, scraped, extracted } = build({
+    const { service, extracted } = build({
       scrape: { 'https://one.test/pancakes': 'fail' },
       extract: {},
     });
 
     const result = await service.find('pancakes');
 
-    expect(scraped).toEqual([
-      'https://one.test/pancakes',
-      'https://two.test/pancakes',
-    ]);
     // A page we never fetched is never extracted from.
     expect(extracted).toEqual(['https://two.test/pancakes']);
     expect(result.why).toBe('second');
@@ -249,6 +267,65 @@ describe('RecipesService.find — the candidate walk', () => {
       'https://two.test/pancakes',
     ]);
     expect(result.why).toBe('second');
+  });
+
+  it('extracts whichever fetch lands first, not the best-ranked', async () => {
+    const { service, extracted, signals } = build({
+      scrape: { 'https://one.test/pancakes': 'slow' },
+      extract: {},
+    });
+
+    const result = await service.find('pancakes');
+
+    expect(extracted).toEqual(['https://two.test/pancakes']);
+    expect(result.why).toBe('second');
+    expect(signals.get('https://one.test/pancakes')?.aborted).toBe(true);
+  });
+
+  it('races the rest again when the first page to land is not a recipe', async () => {
+    const { service, scraped, extracted } = build({
+      scrape: { 'https://three.test/pancakes': 'slow' },
+      extract: {
+        'https://one.test/pancakes': 'not-a-recipe',
+        'https://two.test/pancakes': 'not-a-recipe',
+      },
+    });
+
+    const result = await service.find('pancakes');
+
+    // Each page was fetched once; the slow one was still in flight, not refetched.
+    expect(scraped).toEqual(candidates.map((c) => c.url));
+    expect(extracted).toEqual([
+      'https://one.test/pancakes',
+      'https://two.test/pancakes',
+      'https://three.test/pancakes',
+    ]);
+    expect(result.why).toBe('third');
+  });
+
+  it('aborts the fetches still in flight once one wins, and traces none of them', async () => {
+    const { service, signals, trace } = build({
+      scrape: {
+        'https://two.test/pancakes': 'hang',
+        'https://three.test/pancakes': 'hang',
+      },
+      extract: {},
+    });
+    const fetchedUrls: unknown[] = [];
+    const event = trace.event.bind(trace);
+    trace.event = (name, fields) => {
+      if (name === 'recipe.fetch') fetchedUrls.push(fields.url);
+      event(name, fields);
+    };
+
+    const result = await service.find('pancakes');
+
+    expect(result.why).toBe('first');
+    expect(signals.get('https://two.test/pancakes')?.aborted).toBe(true);
+    expect(signals.get('https://three.test/pancakes')?.aborted).toBe(true);
+    // Let the aborted rejections settle before looking at the log.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(fetchedUrls).toEqual(['https://one.test/pancakes']);
   });
 
   it('falls back to the web_fetch text when all three fail our own fetch', async () => {

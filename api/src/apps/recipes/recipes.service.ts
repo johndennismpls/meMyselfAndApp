@@ -29,6 +29,13 @@ import { ScrapeService, type CleanedPage } from './scrape.service';
 import { SettingsService } from './settings.service';
 import { RecipeTrace } from './trace';
 
+/** A candidate whose page we fetched ourselves, ready for extraction. */
+interface FetchedCandidate {
+  candidate: Candidate;
+  page: CleanedPage;
+  baseUrl: string;
+}
+
 @Injectable()
 export class RecipesService {
   constructor(
@@ -43,10 +50,15 @@ export class RecipesService {
   ) {}
 
   /**
-   * The find path (§7.1). Discovery, then the lower half of the pipeline on each
-   * candidate in rank order, returning the first that yields a recipe. A
-   * candidate that 403s or turns out to be a listicle costs one failed attempt,
-   * not the whole request.
+   * The find path (§7.1). Discovery, then the lower half of the pipeline on the
+   * candidates, returning the first that yields a recipe. A candidate that 403s
+   * or turns out to be a listicle costs one failed attempt, not the whole
+   * request.
+   *
+   * Every candidate's fetch starts at once — they cost nothing but time — and
+   * whichever lands first is extracted. Extraction stays serial because each
+   * one is a paid model call; if it isn't a recipe, the rest race again. Once
+   * one wins, the fetches still in flight are aborted.
    */
   async find(request: string): Promise<FindResultDto> {
     this.trace.event('recipe.request', { path: 'find', requestText: request });
@@ -57,25 +69,62 @@ export class RecipesService {
     const discovered = await this.discovery.discover(request, preferences);
     const attempts: { url: string; reason: string }[] = [];
 
-    for (const candidate of discovered.candidates) {
-      const attempt = await this.attempt(candidate.url);
-      if (attempt.ok) {
-        const recipe = await this.persist(
-          attempt.recipe,
-          attempt.page,
-          attempt.baseUrl,
-          request,
-          candidate,
-          'fetch',
+    const inFlight = new AbortController();
+    const fetches = new Map(
+      discovered.candidates.map((candidate) => {
+        const fetching = this.fetchCandidate(candidate, inFlight.signal);
+        // Recorded as each one fails. Promise.any only reports failures if
+        // every fetch fails, and without saying which URL each was.
+        fetching.catch((error: unknown) =>
+          attempts.push({ url: candidate.url, reason: reasonOf(error) }),
         );
-        return this.findResult(
-          recipe,
-          discovered.interpretedAs,
-          candidate,
-          discovered.candidates,
+        return [candidate.url, fetching] as const;
+      }),
+    );
+
+    let winner: (FetchedCandidate & { recipe: ExtractedRecipe }) | undefined;
+    try {
+      while (fetches.size > 0) {
+        let landed: FetchedCandidate;
+        try {
+          landed = await Promise.any(fetches.values());
+        } catch {
+          break; // every remaining fetch failed
+        }
+        fetches.delete(landed.candidate.url);
+
+        const extracted = await this.extraction.extract(
+          landed.page,
+          landed.baseUrl,
         );
+        if (extracted.ok) {
+          winner = { ...landed, recipe: extracted.recipe };
+          break;
+        }
+        attempts.push({
+          url: landed.candidate.url,
+          reason: extracted.rejectionReason,
+        });
       }
-      attempts.push({ url: candidate.url, reason: attempt.reason });
+    } finally {
+      inFlight.abort();
+    }
+
+    if (winner) {
+      const recipe = await this.persist(
+        winner.recipe,
+        winner.page,
+        winner.baseUrl,
+        request,
+        winner.candidate,
+        'fetch',
+      );
+      return this.findResult(
+        recipe,
+        discovered.interpretedAs,
+        winner.candidate,
+        discovered.candidates,
+      );
     }
 
     // Every candidate failed our own fetch or wasn't a recipe. Fall back once to
@@ -162,42 +211,40 @@ export class RecipesService {
     );
   }
 
-  /** One candidate through guard → fetch → clean → extract. */
-  private async attempt(
-    url: string,
-  ): Promise<
-    | { ok: true; recipe: ExtractedRecipe; page: CleanedPage; baseUrl: string }
-    | { ok: false; reason: string }
-  > {
-    let page: CleanedPage;
-    let baseUrl: string;
+  /**
+   * Guard → fetch → clean for one candidate, traced as it lands. A fetch
+   * aborted because another candidate already won leaves no line behind.
+   */
+  private async fetchCandidate(
+    candidate: Candidate,
+    signal: AbortSignal,
+  ): Promise<FetchedCandidate> {
+    const { url } = candidate;
     try {
-      const scraped = await this.scraper.scrape(url);
-      page = scraped.page;
-      baseUrl = scraped.fetched.finalUrl;
+      const { page, fetched } = await this.scraper.scrape(url, signal);
+      // Landed just as another candidate won: nothing will read it.
+      signal.throwIfAborted();
       this.trace.event('recipe.fetch', {
         url,
         outcome: 'ok',
         via: 'fetch',
-        bytes: scraped.fetched.bytes,
-        ms: scraped.fetched.ms,
+        bytes: fetched.bytes,
+        ms: fetched.ms,
       });
+      return { candidate, page, baseUrl: fetched.finalUrl };
     } catch (error) {
-      const reason =
-        error instanceof HttpException ? error.message : String(error);
-      this.trace.event('recipe.fetch', {
-        url,
-        outcome: error instanceof HttpException ? error.getStatus() : 'blocked',
-        via: 'fetch',
-        bytes: 0,
-        ms: 0,
-      });
-      return { ok: false, reason };
+      if (!signal.aborted) {
+        this.trace.event('recipe.fetch', {
+          url,
+          outcome:
+            error instanceof HttpException ? error.getStatus() : 'blocked',
+          via: 'fetch',
+          bytes: 0,
+          ms: 0,
+        });
+      }
+      throw error;
     }
-
-    const extracted = await this.extraction.extract(page, baseUrl);
-    if (!extracted.ok) return { ok: false, reason: extracted.rejectionReason };
-    return { ok: true, recipe: extracted.recipe, page, baseUrl };
   }
 
   /** Image (non-fatal), insert, trace. */
@@ -370,6 +417,10 @@ export class RecipesService {
     if (!row) throw notFound(id);
     return row;
   }
+}
+
+function reasonOf(error: unknown): string {
+  return error instanceof HttpException ? error.message : String(error);
 }
 
 function notFound(id: number): NotFoundException {
