@@ -20,7 +20,7 @@ export class InspireService {
   constructor(
     private readonly claude: ClaudeRepository,
     private readonly trace: RecipeTrace,
-  ) { }
+  ) {}
 
   async suggest(
     recipes: RecipeSummaryDto[],
@@ -30,6 +30,7 @@ export class InspireService {
     let response;
     try {
       response = await this.claude.parse({
+        model: 'opus',
         maxTokens: 1000,
         system: INSPIRE_SYSTEM,
         user: inspireTurn(recipes, preferences, previous),
