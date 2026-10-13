@@ -3,6 +3,7 @@ import { AppModule } from '../src/app.module';
 import { DRIZZLE } from '../src/database/database.constants';
 import type { DrizzleDB } from '../src/database/database.types';
 import { apps } from '../src/database/schema';
+import { assertTestDatabase } from './test-database';
 
 describe('apps table', () => {
   let mod: Awaited<ReturnType<typeof buildModule>>;
@@ -14,9 +15,11 @@ describe('apps table', () => {
   beforeAll(async () => {
     mod = await buildModule();
     db = mod.get<DrizzleDB>(DRIZZLE);
+    await assertTestDatabase(db);
   });
 
-  afterEach(async () => {
+  // Before, not after: a freshly migrated database holds the seed rows.
+  beforeEach(async () => {
     await db.delete(apps);
   });
 

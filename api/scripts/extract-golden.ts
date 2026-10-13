@@ -16,6 +16,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { ConfigService } from '@nestjs/config';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { ClaudeRepository } from '../src/apps/recipes/claude.repository';
 import { DiscoveryService } from '../src/apps/recipes/discovery.service';
 import { ExtractionService } from '../src/apps/recipes/extraction.service';
 import { ScrapeService } from '../src/apps/recipes/scrape.service';
@@ -39,18 +40,18 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const client = new Anthropic();
+  const claude = new ClaudeRepository(new Anthropic());
   const config = new ConfigService();
   const trace = new RecipeTrace();
   const scraper = new ScrapeService(config);
-  const extraction = new ExtractionService(client, trace);
+  const extraction = new ExtractionService(claude, trace);
 
   const findIndex = process.argv.indexOf('--find');
   const request = findIndex === -1 ? null : process.argv[findIndex + 1];
 
   if (request) {
     console.log(`\n=== DISCOVERY: ${request} ===\n`);
-    const discovery = new DiscoveryService(client, trace, config);
+    const discovery = new DiscoveryService(claude, trace, config);
     const result = await discovery.discover(request);
     console.log('interpreted as:', result.interpretedAs);
     for (const [i, candidate] of result.candidates.entries()) {

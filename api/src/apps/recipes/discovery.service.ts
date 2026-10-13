@@ -1,18 +1,14 @@
-import type Anthropic from '@anthropic-ai/sdk';
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import {
   BadGatewayException,
-  Inject,
   Injectable,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ANTHROPIC } from './anthropic.provider';
+import { ClaudeRepository } from './claude.repository';
 import { DISCOVERY_SYSTEM, discoveryTurn } from './discovery.prompt';
 import { Discovery, type Candidate } from './discovery.schema';
 import { assertGrounded, fetchedPageText } from './grounding';
-import { RECIPE_MAX_TOKENS, RECIPE_MODEL } from './models';
-import { RecipeTrace, usageOf } from './trace';
+import { RecipeTrace } from './trace';
 
 export interface DiscoveryResult {
   interpretedAs: string;
@@ -30,7 +26,7 @@ export class DiscoveryService {
   private readonly maxCandidates: number;
 
   constructor(
-    @Inject(ANTHROPIC) private readonly client: Anthropic,
+    private readonly claude: ClaudeRepository,
     private readonly trace: RecipeTrace,
     config: ConfigService,
   ) {
@@ -47,17 +43,15 @@ export class DiscoveryService {
     userRequest: string,
     preferences: string[] = [],
   ): Promise<DiscoveryResult> {
-    const response = await this.client.messages.parse({
-      model: RECIPE_MODEL,
-      max_tokens: RECIPE_MAX_TOKENS,
-      system: [
-        {
-          type: 'text',
-          text: DISCOVERY_SYSTEM,
-          cache_control: { type: 'ephemeral' },
-        },
-      ],
-      thinking: { type: 'adaptive' },
+    const response = await this.claude.parse({
+      maxTokens: 16000,
+      system: DISCOVERY_SYSTEM,
+      user: discoveryTurn(userRequest, preferences),
+      schema: Discovery,
+      thinking: true,
+      // Search-and-judge is genuinely harder than extraction; `low` tends to
+      // grab the first result without opening it.
+      effort: 'medium',
       tools: [
         // The _20260209 variants carry dynamic filtering, which is exactly right
         // when a recipe search returns ten near-identical SEO pages. They run
@@ -65,31 +59,22 @@ export class DiscoveryService {
         { type: 'web_search_20260209', name: 'web_search', max_uses: 5 },
         { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 5 },
       ],
-      output_config: {
-        // Search-and-judge is genuinely harder than extraction; `low` tends to
-        // grab the first result without opening it.
-        effort: 'medium',
-        format: zodOutputFormat(Discovery),
-      },
-      messages: [
-        { role: 'user', content: discoveryTurn(userRequest, preferences) },
-      ],
     });
 
-    if (response.stop_reason === 'refusal') {
+    if (response.stopReason === 'refusal') {
       throw new UnprocessableEntityException(
         "Couldn't search for that. Try again.",
       );
     }
 
-    const parsed = response.parsed_output;
+    const parsed = response.parsed;
     if (!parsed) {
       throw new BadGatewayException(
         'The extraction service failed. Try again.',
       );
     }
 
-    const usage = usageOf(response.usage, RECIPE_MODEL);
+    const { usage } = response;
 
     if (!parsed.is_food_request) {
       this.trace.event('recipe.discovery', {

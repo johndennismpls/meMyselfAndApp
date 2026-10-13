@@ -9,12 +9,14 @@ import { ScrapeService } from '../src/apps/recipes/scrape.service';
 import { DRIZZLE } from '../src/database/database.constants';
 import type { DrizzleDB } from '../src/database/database.types';
 import { recipeSettings, recipes } from '../src/database/schema';
+import { assertTestDatabase } from './test-database';
 
 /**
  * find → get → patch → delete against the real database, with both model stages
  * stubbed (§11.3: no test may call the Anthropic API).
  *
- * Needs the 0001 migration applied — `pnpm db:migrate`.
+ * Runs against the `_test` database (see setup-env.ts), which needs the
+ * migrations applied — never the dev one: it deletes every row between tests.
  */
 
 // The module refuses to boot without a key (§10); the stubs mean it is unused.
@@ -99,6 +101,7 @@ describe('/recipes', () => {
     app = mod.createNestApplication();
     await app.init();
     db = mod.get<DrizzleDB>(DRIZZLE);
+    await assertTestDatabase(db);
   });
 
   afterEach(async () => {

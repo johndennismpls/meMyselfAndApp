@@ -76,6 +76,35 @@ describe('RecipeTrace', () => {
     expect(line.sourceUrl).toBeUndefined();
     expect(line.recipeId).toBeUndefined();
   });
+
+  it('logs errors at error level, with what was thrown as a structured field', () => {
+    const lines: { message: Record<string, unknown>; stack: unknown }[] = [];
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- reinstated verbatim below
+    const original = Logger.prototype.error;
+    Logger.prototype.error = function (message: unknown, stack?: unknown) {
+      lines.push({ message: message as Record<string, unknown>, stack });
+    };
+    const trace = new RecipeTrace();
+
+    const thrown = new Error('socket hang up');
+    trace.error('recipe.failed', thrown, { stage: 'extraction', status: 502 });
+    trace.error('recipe.failed', 'not an Error');
+    Logger.prototype.error = original;
+
+    expect(lines[0].message).toEqual({
+      event: 'recipe.failed',
+      traceId: trace.traceId,
+      stage: 'extraction',
+      status: 502,
+      error: { name: 'Error', message: 'socket hang up' },
+    });
+    expect(lines[0].stack).toBe(thrown.stack);
+    expect(lines[1].message.error).toEqual({
+      name: 'NonError',
+      message: 'not an Error',
+    });
+    expect(lines[1].stack).toBeUndefined();
+  });
 });
 
 describe('usageOf', () => {

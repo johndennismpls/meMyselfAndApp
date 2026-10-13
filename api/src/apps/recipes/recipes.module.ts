@@ -1,10 +1,12 @@
 import { Module, type OnModuleInit } from '@nestjs/common';
 import { anthropicProvider } from './anthropic.provider';
+import { ClaudeRepository } from './claude.repository';
 import { DiscoveryService } from './discovery.service';
 import { ExtractionService } from './extraction.service';
 import { ImageService } from './image.service';
 import { InspireService } from './inspire.service';
 import { RecipesController } from './recipes.controller';
+import { RecipesRepository } from './recipes.repository';
 import { RecipesService } from './recipes.service';
 import { ScrapeService } from './scrape.service';
 import { SettingsService } from './settings.service';
@@ -14,7 +16,9 @@ import { RecipeTrace } from './trace';
   controllers: [RecipesController],
   providers: [
     anthropicProvider,
+    ClaudeRepository,
     RecipesService,
+    RecipesRepository,
     DiscoveryService,
     ScrapeService,
     ExtractionService,
