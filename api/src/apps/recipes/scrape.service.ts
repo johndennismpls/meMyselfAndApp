@@ -74,12 +74,14 @@ export class ScrapeService {
   /**
    * Fetch one URL through the guard, following redirects by hand so the guard
    * re-runs on every hop. A discovered URL gets no more trust than a pasted one.
+   * `signal` lets the find path abandon a fetch once another candidate has won.
    */
-  async fetchHtml(rawUrl: string): Promise<FetchOutcome> {
+  async fetchHtml(rawUrl: string, signal?: AbortSignal): Promise<FetchOutcome> {
     const started = Date.now();
     let current = rawUrl;
 
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      signal?.throwIfAborted();
       const guard = await guardUrl(current, this.resolver);
       if (!guard.ok) {
         if (guard.reason === 'malformed' || guard.reason === 'scheme') {
@@ -100,7 +102,9 @@ export class ScrapeService {
         try {
           response = await fetch(guard.url, {
             redirect: 'manual',
-            signal: AbortSignal.timeout(this.timeoutMs),
+            signal: signal
+              ? AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)])
+              : AbortSignal.timeout(this.timeoutMs),
             dispatcher,
             headers: {
               // Some sites 403 a bare fetch. An honest UA gets further than none.
@@ -224,8 +228,9 @@ export class ScrapeService {
   /** The whole path for one URL: guard, fetch, clean, check. */
   async scrape(
     url: string,
+    signal?: AbortSignal,
   ): Promise<{ page: CleanedPage; fetched: FetchOutcome }> {
-    const fetched = await this.fetchHtml(url);
+    const fetched = await this.fetchHtml(url, signal);
     const page = this.clean(fetched.html);
     this.assertUsable(page);
     return { page, fetched };
