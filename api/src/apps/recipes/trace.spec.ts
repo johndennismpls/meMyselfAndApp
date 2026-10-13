@@ -2,8 +2,8 @@ import { Logger } from '@nestjs/common';
 import { RecipeTrace, usageOf } from './trace';
 
 /**
- * §11.3. The record holds no source URL (§1.3), so these lines are the only
- * provenance there is — which makes their shape worth a test.
+ * §11.3. Beyond the source URL (§1.3), these lines are the only provenance
+ * there is — which makes their shape worth a test.
  */
 
 /** Captures what a RecipeTrace hands the Nest logger. */

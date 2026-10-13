@@ -20,6 +20,14 @@ Where a preference and the request genuinely conflict, the request wins — it i
 they want today — and you say so in the why line for the candidate you return. They are
 preferences about searching only: they never change what a page says.
 
+ALREADY SAVED
+
+The user turn may also carry an <already_saved> block: pages whose recipes are already in
+the person's recipe box. Never propose one of those URLs, nor the same page under a
+different address. The person is asking for something new, so look for another page —
+another site's take on the dish is exactly right. Pages not on the list are fine to
+propose even when the dish is similar to one already saved.
+
 HOW TO SEARCH
 
 - Search for the dish the person described, honouring every constraint they gave
@@ -60,12 +68,24 @@ why: one line per candidate on why that page fits the request, mentioning the
 constraints it satisfies. Also shown to the person.`;
 
 /**
- * The user turn. Preferences go here rather than in the system prompt so the
- * cache prefix stays byte-identical across requests (§5.5) — and so editing
- * them on the settings page costs nothing but a cache miss on the short tail.
+ * The user turn. Preferences and saved URLs go here rather than in the system
+ * prompt so the cache prefix stays byte-identical across requests (§5.5) — and
+ * so editing them costs nothing but a cache miss on the short tail.
  */
-export function discoveryTurn(request: string, preferences: string[]): string {
-  if (preferences.length === 0) return request;
-  const lines = preferences.map((line) => `- ${line}`).join('\n');
-  return `<standing_preferences>\n${lines}\n</standing_preferences>\n\n${request}`;
+export function discoveryTurn(
+  request: string,
+  preferences: string[],
+  alreadySaved: string[] = [],
+): string {
+  const blocks = [
+    block('standing_preferences', preferences),
+    block('already_saved', alreadySaved),
+  ].filter(Boolean);
+  return [...blocks, request].join('\n\n');
+}
+
+function block(tag: string, lines: string[]): string {
+  if (lines.length === 0) return '';
+  const bullets = lines.map((line) => `- ${line}`).join('\n');
+  return `<${tag}>\n${bullets}\n</${tag}>`;
 }

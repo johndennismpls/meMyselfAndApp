@@ -2,9 +2,9 @@ import { Injectable, Logger, Scope } from '@nestjs/common';
 import { nanoid } from 'nanoid';
 
 /**
- * The trace log (§6.4). Nothing on the record says where a recipe came from
- * (§1.3), so these lines are the only provenance there is. A log rotation policy
- * that discards them is discarding the provenance too.
+ * The trace log (§6.4). The record keeps only the source URL (§1.3); the site
+ * name, the image's origin, and the page text extraction ran on live here and
+ * nowhere else.
  *
  * Every payload is passed as a structured object, never interpolated into the
  * message string, so a recipe page containing log-shaped text cannot forge a

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, isNotNull } from 'drizzle-orm';
 import { DRIZZLE } from '../../database/database.constants';
 import type { DrizzleDB } from '../../database/database.types';
 import { recipes, type NewRecipe, type Recipe } from '../../database/schema';
@@ -20,6 +20,14 @@ export class RecipesRepository {
   /** Newest first. */
   findAll(): Promise<Recipe[]> {
     return this.db.select().from(recipes).orderBy(desc(recipes.createdAt));
+  }
+
+  /** Every recipe that came from a page, for the duplicate check (§7.2). */
+  sources(): Promise<Pick<Recipe, 'title' | 'sourceUrl'>[]> {
+    return this.db
+      .select({ title: recipes.title, sourceUrl: recipes.sourceUrl })
+      .from(recipes)
+      .where(isNotNull(recipes.sourceUrl));
   }
 
   async findById(id: number): Promise<Recipe | undefined> {

@@ -63,23 +63,41 @@ const page: CleanedPage = {
   canonicalUrl: null,
 };
 
-/** A minimal insert().values().returning() chain over one fake row. */
-function fakeDb(): DrizzleDB {
+/**
+ * A minimal insert().values().returning() chain, plus the one select the
+ * duplicate check makes. Rows inserted are remembered, so a second find or
+ * scrape sees the first.
+ */
+function fakeDb(sourceUrls: string[]): DrizzleDB {
   let nextId = 1;
+  const rows = sourceUrls.map((sourceUrl) => ({
+    id: nextId++,
+    title: 'Saved Pancakes',
+    sourceUrl,
+  }));
   return {
+    select: () => ({
+      from: () => ({ where: () => Promise.resolve([...rows]) }),
+    }),
     insert: () => ({
       values: (row: Record<string, unknown>) => ({
-        returning: () =>
-          Promise.resolve([
-            {
-              ...row,
-              id: nextId++,
-              imageFilename: row.imageFilename ?? null,
-              imageMimeType: row.imageMimeType ?? null,
-              createdAt: new Date('2026-09-20T00:00:00Z'),
-              updatedAt: new Date('2026-09-20T00:00:00Z'),
-            },
-          ]),
+        returning: () => {
+          const inserted = {
+            ...row,
+            id: nextId++,
+            imageFilename: row.imageFilename ?? null,
+            imageMimeType: row.imageMimeType ?? null,
+            sourceUrl: row.sourceUrl ?? null,
+            createdAt: new Date('2026-09-20T00:00:00Z'),
+            updatedAt: new Date('2026-09-20T00:00:00Z'),
+          };
+          rows.push({
+            id: inserted.id,
+            title: String(row.title),
+            sourceUrl: String(row.sourceUrl),
+          });
+          return Promise.resolve([inserted]);
+        },
       }),
     }),
   } as unknown as DrizzleDB;
@@ -97,6 +115,10 @@ interface Stubs {
   extract: Record<string, 'recipe' | 'not-a-recipe'>;
   /** Page text web_fetch already pulled, for the §4.3 fallback. */
   fetchedText?: Map<string, string>;
+  /** Source URLs already in the box (§7.2). */
+  saved?: string[];
+  /** Where a fetched URL ended up, when it redirected. */
+  redirects?: Record<string, string>;
 }
 
 function build(stubs: Stubs) {
@@ -104,14 +126,15 @@ function build(stubs: Stubs) {
   const extracted: string[] = [];
   const signals = new Map<string, AbortSignal>();
 
-  const discovered: { preferences: string[] }[] = [];
+  const discovered: { preferences: string[]; alreadySaved: string[] }[] = [];
 
   const discovery = {
     discover: (
       _request: string,
       preferences: string[],
+      alreadySaved: string[],
     ): Promise<DiscoveryResult> => {
-      discovered.push({ preferences });
+      discovered.push({ preferences, alreadySaved });
       return Promise.resolve({
         interpretedAs: 'homemade pancakes',
         candidates,
@@ -130,7 +153,12 @@ function build(stubs: Stubs) {
       signals.set(url, signal);
       const result = {
         page,
-        fetched: { html: '', bytes: 500, ms: 12, finalUrl: url },
+        fetched: {
+          html: '',
+          bytes: 500,
+          ms: 12,
+          finalUrl: stubs.redirects?.[url] ?? url,
+        },
       };
       if (stubs.scrape[url] === 'hang') {
         return new Promise((_resolve, reject) => {
@@ -177,7 +205,7 @@ function build(stubs: Stubs) {
 
   const trace = new RecipeTrace();
   const service = new RecipesService(
-    new RecipesRepository(fakeDb()),
+    new RecipesRepository(fakeDb(stubs.saved ?? [])),
     discovery,
     scraper,
     extraction,
@@ -226,7 +254,10 @@ describe('RecipesService.find — the candidate walk', () => {
     const result = await service.find('give me a brownie recipe');
 
     expect(discovered).toEqual([
-      { preferences: ['No tree nuts', 'I only have a microwave'] },
+      {
+        preferences: ['No tree nuts', 'I only have a microwave'],
+        alreadySaved: [],
+      },
     ]);
     // They shape the search, never the record: what you typed is what is
     // stored (§9.4).
@@ -238,7 +269,7 @@ describe('RecipesService.find — the candidate walk', () => {
 
     await service.find('pancakes');
 
-    expect(discovered).toEqual([{ preferences: [] }]);
+    expect(discovered).toEqual([{ preferences: [], alreadySaved: [] }]);
   });
 
   it('moves on when the first candidate 403s', async () => {
@@ -363,6 +394,64 @@ describe('RecipesService.find — the candidate walk', () => {
     });
   });
 
+  it('stores the winning candidate’s URL as the source', async () => {
+    const { service } = build({
+      scrape: {},
+      extract: {},
+      redirects: { 'https://one.test/pancakes': 'https://one.test/p/123' },
+    });
+    const result = await service.find('pancakes');
+    // What discovery proposed, not where it redirected: the next discovery
+    // will propose the same URL, and that is what the duplicate check matches.
+    expect(result.recipe.sourceUrl).toBe('https://one.test/pancakes');
+  });
+
+  it('tells discovery what is already saved', async () => {
+    const { service, discovered } = build({
+      scrape: {},
+      extract: {},
+      saved: ['https://saved.test/waffles'],
+    });
+
+    await service.find('pancakes');
+
+    expect(discovered[0].alreadySaved).toEqual(['https://saved.test/waffles']);
+  });
+
+  it('skips a candidate already in the box, even under a different spelling', async () => {
+    const { service, scraped } = build({
+      scrape: {},
+      extract: {},
+      saved: ['https://www.one.test/pancakes/?utm_source=x'],
+    });
+
+    const result = await service.find('pancakes');
+
+    // Never fetched: discovery was told, and ignored it, so it is dropped here.
+    expect(scraped).toEqual([
+      'https://two.test/pancakes',
+      'https://three.test/pancakes',
+    ]);
+    expect(result.why).toBe('second');
+    expect(result.alternates.map((a) => a.url)).toEqual([
+      'https://three.test/pancakes',
+    ]);
+  });
+
+  it('422s when every candidate is already in the box', async () => {
+    const { service, scraped } = build({
+      scrape: {},
+      extract: {},
+      saved: candidates.map((c) => c.url),
+    });
+
+    await expect(service.find('pancakes')).rejects.toMatchObject({
+      status: 422,
+      message: 'Everything I found is already in your box.',
+    });
+    expect(scraped).toEqual([]);
+  });
+
   it('stores what you typed, for the deferred "more like this"', async () => {
     const { service } = build({ scrape: {}, extract: {} });
     const result = await service.find('give me a homemade pancakes recipe');
@@ -391,5 +480,53 @@ describe('RecipesService.scrape — the pasted-URL path', () => {
     const { service } = build({ scrape: {}, extract: {} });
     const result = await service.scrape('https://one.test/pancakes');
     expect(result.requestText).toBeNull();
+  });
+
+  it('stores where the page ended up as the source', async () => {
+    const { service } = build({
+      scrape: {},
+      extract: {},
+      redirects: { 'https://one.test/pancakes': 'https://one.test/p/123' },
+    });
+    const result = await service.scrape('https://one.test/pancakes');
+    expect(result.sourceUrl).toBe('https://one.test/p/123');
+  });
+
+  it('409s a URL already in the box without fetching it', async () => {
+    const { service, scraped } = build({
+      scrape: {},
+      extract: {},
+      saved: ['https://one.test/pancakes'],
+    });
+
+    await expect(
+      service.scrape('https://www.one.test/pancakes/'),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: '“Saved Pancakes” is already in your box.',
+    });
+    expect(scraped).toEqual([]);
+  });
+
+  it('409s a URL that redirects to one already in the box, before extracting', async () => {
+    const { service, extracted } = build({
+      scrape: {},
+      extract: {},
+      saved: ['https://one.test/p/123'],
+      redirects: { 'https://one.test/pancakes': 'https://one.test/p/123' },
+    });
+
+    await expect(
+      service.scrape('https://one.test/pancakes'),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(extracted).toEqual([]);
+  });
+
+  it('409s the same URL pasted twice', async () => {
+    const { service } = build({ scrape: {}, extract: {} });
+    await service.scrape('https://one.test/pancakes');
+    await expect(
+      service.scrape('https://one.test/pancakes'),
+    ).rejects.toMatchObject({ status: 409 });
   });
 });
