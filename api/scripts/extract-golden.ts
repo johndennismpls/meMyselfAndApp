@@ -40,8 +40,8 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const claude = new ClaudeRepository(new Anthropic());
   const config = new ConfigService();
+  const claude = new ClaudeRepository(new Anthropic(), config);
   const trace = new RecipeTrace();
   const scraper = new ScrapeService(config);
   const extraction = new ExtractionService(claude, trace);

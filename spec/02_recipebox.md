@@ -19,7 +19,7 @@ web app is a thin client over it.
 | Finding the recipe | Claude with the `web_search` / `web_fetch` server tools | Anthropic runs the search loop; we get real URLs back and pay no scraping infrastructure. |
 | **Recipes are never model-generated** | **Two separate calls, and the extraction call cannot see your request** | This is the load-bearing decision. See §1.1. |
 | Extraction | Claude on page text we fetched ourselves, every time | One prompt, one shape. A JSON-LD fast path would be cheaper but copies the source site's voice, and the point is that every recipe reads the same. |
-| Model | `claude-opus-5` for both stages, hardcoded | Not a setting. Discovery needs judgment about which of ten results is a real recipe, and extraction quality is the product — neither is a knob worth exposing. One constant, in one file. See §5.4. |
+| Model | Opus for discovery, Sonnet for extraction; each call names one in code | Not a user setting. Discovery needs judgment about which of ten results is a real recipe, so it stays on Opus; extraction is reformatting a page we were handed, and Sonnet does it several times faster. See §5.4. |
 | Output contract | Structured outputs via `messages.parse()` + Zod | The schema *is* the format guarantee. No prompt-and-pray JSON parsing. |
 | Images | Downloaded and stored on the API filesystem | Source images rot, move, and block hotlinking. Owning the bytes makes "use my own photo" a file upload, not a special case. |
 | Auth | None. One shared recipe box. | Matches the rest of this toolbox. Accounts are out of scope, not deferred-with-hooks — nothing here is shaped around a future user model. |
@@ -160,7 +160,7 @@ ever grows an `ingredients` array, the guarantee in §1.1 is gone.
 
 ```ts
 const response = await this.client.messages.parse({
-  model: RECIPE_MODEL,                    // 'claude-opus-5', from claude.repository.ts
+  model: 'claude-opus-5-5',               // the `opus` key, resolved in claude.repository.ts
   max_tokens: 16000,
   system: [{ type: 'text', text: DISCOVERY_SYSTEM, cache_control: { type: 'ephemeral' } }],
   thinking: { type: 'adaptive' },
@@ -357,7 +357,7 @@ is ignored, and `/recipes/find` moves to the next candidate rather than failing 
 
 ```ts
 const response = await this.client.messages.parse({
-  model: RECIPE_MODEL,                    // the same constant — see §5.4
+  model: 'claude-sonnet-5-5',             // the `sonnet` key — see §5.4
   max_tokens: 16000,
   system: [{ type: 'text', text: EXTRACTION_SYSTEM, cache_control: { type: 'ephemeral' } }],
   thinking: { type: 'adaptive' },
@@ -410,15 +410,18 @@ So **roughly $0.25–0.50 per find**, and a pasted URL is the extraction row alo
 is billed per search on top of tokens — check current pricing rather than trusting a number
 written here.
 
-**The model is hardcoded.** `api/src/apps/recipes/claude.repository.ts` holds a single
-`RECIPE_MODEL = 'claude-opus-5'` that every call uses. It is not an env var, not a
-request parameter, and not a user setting — changing models changes output quality in ways
-only a prompt-and-eval pass can judge (§11.3's golden script), so it should be a commit,
-not a config change someone makes at runtime.
+**Each call picks its model by name.** `api/src/apps/recipes/claude.repository.ts` defines
+`RecipeModel = 'opus' | 'sonnet'`, and every call to `ClaudeRepository.parse` must name
+one — discovery and inspire use `opus`, extraction uses `sonnet`. Callers never pass an ID
+string, so they cannot ask for a model the repository doesn't know. The ID behind each name
+comes from `RECIPE_MODEL_OPUS` / `RECIPE_MODEL_SONNET` (§10), so moving to a new release
+is a config change; moving a call to a different *name*, or adding one, is a commit,
+because that changes output quality in ways only a prompt-and-eval pass can judge
+(§11.3's golden script). It is never a request parameter or a user setting.
 
 `usage` from both stages is logged (input, output, cache read, model) so the table above
-can be replaced with real numbers. If that ever argues for a cheaper extraction stage,
-split the constant in two and commit that — the call sites already read from one module.
+can be replaced with real numbers. That measurement is what moved extraction to Sonnet:
+it is the slowest call by far, and nearly all of its time is generating the recipe.
 
 ### 5.5 Caching
 
@@ -796,6 +799,8 @@ avoid` on each.
 | `RECIPE_FETCH_TIMEOUT_MS` | `10000` | §4.1. |
 | `RECIPE_MAX_PAGE_CHARS` | `250000` | §4.2. |
 | `RECIPE_MAX_CANDIDATES` | `3` | §7.1. |
+| `RECIPE_MODEL_OPUS` | `claude-opus-5-5` | §5.4. The ID behind the `opus` name. |
+| `RECIPE_MODEL_SONNET` | `claude-sonnet-5-5` | §5.4. The ID behind the `sonnet` name. |
 
 Added to `api/.env.example`. `ANTHROPIC_API_KEY` goes in `.env`, already gitignored —
 confirm before the first commit.

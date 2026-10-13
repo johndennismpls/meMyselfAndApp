@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type Anthropic from '@anthropic-ai/sdk';
 import { ClaudeRepository } from './claude.repository';
 import { ExtractionService } from './extraction.service';
@@ -46,7 +47,10 @@ const usage = {
  * Hand-rolled rather than jest.fn(): this suite runs as ESM, where the `jest`
  * global is not injected.
  */
-function serviceWith(response: unknown): {
+function serviceWith(
+  response: unknown,
+  env: Record<string, string> = {},
+): {
   service: ExtractionService;
   calls: Record<string, unknown>[];
 } {
@@ -59,7 +63,7 @@ function serviceWith(response: unknown): {
   const client = { messages: { parse } } as unknown as Anthropic;
   return {
     service: new ExtractionService(
-      new ClaudeRepository(client),
+      new ClaudeRepository(client, new ConfigService(env)),
       new RecipeTrace(),
     ),
     calls,
@@ -71,6 +75,25 @@ beforeAll(() => Logger.overrideLogger([]));
 afterAll(() => Logger.overrideLogger(console));
 
 describe('ExtractionService', () => {
+  it('runs on Sonnet, resolved from RECIPE_MODEL_SONNET', async () => {
+    const reply = {
+      stop_reason: 'end_turn',
+      usage,
+      parsed_output: goodRecipe,
+      content: [],
+    };
+
+    const byDefault = serviceWith(reply);
+    await byDefault.service.extract(page, 'https://a.test/pancakes');
+    expect(byDefault.calls[0].model).toBe('claude-sonnet-5-5');
+
+    const overridden = serviceWith(reply, {
+      RECIPE_MODEL_SONNET: 'claude-sonnet-next',
+    });
+    await overridden.service.extract(page, 'https://a.test/pancakes');
+    expect(overridden.calls[0].model).toBe('claude-sonnet-next');
+  });
+
   it('returns the recipe on a good response', async () => {
     const { service } = serviceWith({
       stop_reason: 'end_turn',

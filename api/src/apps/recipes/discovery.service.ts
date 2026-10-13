@@ -44,6 +44,7 @@ export class DiscoveryService {
     preferences: string[] = [],
   ): Promise<DiscoveryResult> {
     const response = await this.claude.parse({
+      model: 'opus',
       maxTokens: 16000,
       system: DISCOVERY_SYSTEM,
       user: discoveryTurn(userRequest, preferences),

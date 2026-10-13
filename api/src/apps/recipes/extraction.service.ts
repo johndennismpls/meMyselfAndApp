@@ -45,6 +45,9 @@ export class ExtractionService {
     let response;
     try {
       response = await this.claude.parse({
+        // Reformatting a page we were handed — the slow stage, and the one
+        // Sonnet handles. Discovery's judgment stays on Opus.
+        model: 'sonnet',
         maxTokens: 16000,
         system: EXTRACTION_SYSTEM,
         user: userTurn(page, url),

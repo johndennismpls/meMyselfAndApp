@@ -1,23 +1,30 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { z } from 'zod';
 import { ANTHROPIC } from './anthropic.provider';
 import { usageOf, type Usage } from './trace';
 
 /**
- * The model every recipes call runs on. Spec §5.4: not an env var, not a
- * request parameter, not a user setting. Changing models changes output
- * quality in ways only a prompt-and-eval pass can judge, so it should arrive as
- * a commit.
+ * The models a recipes call may ask for, and the env var holding each one's ID.
+ * Callers name a key, never an ID string, so they can only pick a model this
+ * map knows about. Changing models changes output quality in ways only a
+ * prompt-and-eval pass can judge (§5.4) — a new key arrives as a commit.
  */
-export const RECIPE_MODEL = 'claude-opus-5';
+const RECIPE_MODELS = {
+  opus: { env: 'RECIPE_MODEL_OPUS', default: 'claude-opus-5-5' },
+  sonnet: { env: 'RECIPE_MODEL_SONNET', default: 'claude-sonnet-5-5' },
+} as const;
+
+export type RecipeModel = keyof typeof RECIPE_MODELS;
 
 /**
  * Everything one call needs. The prompt and knobs come from the caller — this
  * repository owns how a call is made, never what it says.
  */
 export interface ClaudeCall<S extends z.ZodType> {
+  model: RecipeModel;
   maxTokens: number;
   /** Sent as one cached block, so it must stay free of per-request text (§5.5). */
   system: string;
@@ -46,13 +53,31 @@ export interface ClaudeReply<T> {
  */
 @Injectable()
 export class ClaudeRepository {
-  constructor(@Inject(ANTHROPIC) private readonly client: Anthropic) {}
+  /** Resolved once at boot, so a call never reads env. */
+  private readonly modelIds: Record<RecipeModel, string>;
+
+  constructor(
+    @Inject(ANTHROPIC) private readonly client: Anthropic,
+    config: ConfigService,
+  ) {
+    this.modelIds = {
+      opus: config.get<string>(
+        RECIPE_MODELS.opus.env,
+        RECIPE_MODELS.opus.default,
+      ),
+      sonnet: config.get<string>(
+        RECIPE_MODELS.sonnet.env,
+        RECIPE_MODELS.sonnet.default,
+      ),
+    };
+  }
 
   async parse<S extends z.ZodType>(
     call: ClaudeCall<S>,
   ): Promise<ClaudeReply<z.infer<S>>> {
+    const model = this.modelIds[call.model];
     const response = await this.client.messages.parse({
-      model: RECIPE_MODEL,
+      model,
       max_tokens: call.maxTokens,
       system: [
         {
@@ -78,7 +103,7 @@ export class ClaudeRepository {
       },
       content: response.content,
       stopReason: response.stop_reason,
-      usage: usageOf(response.usage, RECIPE_MODEL),
+      usage: usageOf(response.usage, model),
     };
   }
 }
