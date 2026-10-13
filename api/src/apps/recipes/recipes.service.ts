@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   HttpException,
   Injectable,
   NotFoundException,
@@ -36,6 +37,9 @@ interface FetchedCandidate {
   baseUrl: string;
 }
 
+/** Recipes already in the box, keyed by normalised source URL (§7.2). */
+type SavedSources = Map<string, { title: string; sourceUrl: string }>;
+
 @Injectable()
 export class RecipesService {
   constructor(
@@ -65,13 +69,21 @@ export class RecipesService {
 
     // The standing preferences shape the search only (§9.4). They are not part
     // of what you typed, so `requestText` on the row stays exactly that.
-    const preferences = await this.settings.preferences();
-    const discovered = await this.discovery.discover(request, preferences);
+    const [preferences, saved] = await Promise.all([
+      this.settings.preferences(),
+      this.savedSources(),
+    ]);
+    const discovered = await this.discovery.discover(
+      request,
+      preferences,
+      [...saved.values()].map((row) => row.sourceUrl),
+    );
+    const candidates = this.unsaved(discovered.candidates, saved);
     const attempts: { url: string; reason: string }[] = [];
 
     const inFlight = new AbortController();
     const fetches = new Map(
-      discovered.candidates.map((candidate) => {
+      candidates.map((candidate) => {
         const fetching = this.fetchCandidate(candidate, inFlight.signal);
         // Recorded as each one fails. Promise.any only reports failures if
         // every fetch fails, and without saying which URL each was.
@@ -123,7 +135,7 @@ export class RecipesService {
         recipe,
         discovered.interpretedAs,
         winner.candidate,
-        discovered.candidates,
+        candidates,
       );
     }
 
@@ -131,7 +143,7 @@ export class RecipesService {
     // the page text web_fetch already returned (§4.3) — Cloudflare and friends
     // will 403 us on pages Anthropic reached comfortably. Still inside the §1.1
     // guarantee: that text is a real fetch of a real page, not model output.
-    for (const candidate of discovered.candidates) {
+    for (const candidate of candidates) {
       const key = normaliseUrl(candidate.url);
       const text = key ? discovered.fetchedText.get(key) : undefined;
       if (!text || text.length < 200) continue;
@@ -171,7 +183,7 @@ export class RecipesService {
         recipe,
         discovered.interpretedAs,
         candidate,
-        discovered.candidates,
+        candidates,
       );
     }
 
@@ -184,9 +196,18 @@ export class RecipesService {
     throw new UnprocessableEntityException("Couldn't find that one online.");
   }
 
-  /** The pasted-URL path. No §4.3 fallback here — a fetch failure is honest. */
+  /**
+   * The pasted-URL path. No §4.3 fallback here — a fetch failure is honest.
+   *
+   * A page already in the box is a 409 (§7.2), checked against the URL as
+   * pasted before we spend a fetch, and again against where it redirected to
+   * before we spend an extraction.
+   */
   async scrape(url: string): Promise<RecipeDto> {
     this.trace.event('recipe.request', { path: 'scrape', url });
+
+    const saved = await this.savedSources();
+    this.assertNotSaved(url, saved);
 
     const { page, fetched } = await this.scraper.scrape(url);
     this.trace.event('recipe.fetch', {
@@ -196,6 +217,7 @@ export class RecipesService {
       bytes: fetched.bytes,
       ms: fetched.ms,
     });
+    this.assertNotSaved(fetched.finalUrl, saved);
 
     const extracted = await this.extraction.extract(page, fetched.finalUrl);
     if (!extracted.ok) {
@@ -209,6 +231,54 @@ export class RecipesService {
       null,
       'fetch',
     );
+  }
+
+  /** Every saved source URL, keyed by its normalised form (§7.2). */
+  private async savedSources(): Promise<SavedSources> {
+    const saved: SavedSources = new Map();
+    for (const { title, sourceUrl } of await this.repository.sources()) {
+      const key = sourceUrl && normaliseUrl(sourceUrl);
+      if (key) saved.set(key, { title, sourceUrl });
+    }
+    return saved;
+  }
+
+  /**
+   * Drops candidates already in the box. Discovery was told about them, but a
+   * prompt is a request, not a guarantee. 422 if nothing new is left.
+   */
+  private unsaved(candidates: Candidate[], saved: SavedSources): Candidate[] {
+    const isSaved = (c: Candidate) => saved.has(normaliseUrl(c.url) ?? '');
+    const duplicates = candidates.filter(isSaved);
+    if (duplicates.length === 0) return candidates;
+
+    this.trace.event('recipe.duplicates', {
+      dropped: duplicates.map((c) => c.url),
+    });
+    const fresh = candidates.filter((c) => !isSaved(c));
+    if (fresh.length === 0) {
+      this.trace.event('recipe.failed', {
+        stage: 'find',
+        status: 422,
+        message: 'every candidate is already saved',
+      });
+      throw new UnprocessableEntityException(
+        'Everything I found is already in your box.',
+      );
+    }
+    return fresh;
+  }
+
+  private assertNotSaved(url: string, saved: SavedSources): void {
+    const existing = saved.get(normaliseUrl(url) ?? '');
+    if (!existing) return;
+    this.trace.event('recipe.failed', {
+      stage: 'scrape',
+      status: 409,
+      message: 'already saved',
+      url,
+    });
+    throw new ConflictException(`“${existing.title}” is already in your box.`);
   }
 
   /**
@@ -247,7 +317,11 @@ export class RecipesService {
     }
   }
 
-  /** Image (non-fatal), insert, trace. */
+  /**
+   * Image (non-fatal), insert, trace. A find stores the candidate's URL rather
+   * than where it redirected: that is what the next discovery will propose, so
+   * it is what the duplicate check has to match.
+   */
   private async persist(
     extracted: ExtractedRecipe,
     page: CleanedPage,
@@ -277,10 +351,10 @@ export class RecipesService {
       imageFilename: image?.filename ?? null,
       imageMimeType: image?.mimeType ?? null,
       requestText,
+      sourceUrl: candidate?.url ?? baseUrl,
     });
 
     this.trace.bind(row.id);
-    // The only record that this recipe came from this page (§1.3).
     this.trace.event('recipe.saved', {
       recipeId: row.id,
       sourceUrl: baseUrl,
@@ -443,6 +517,7 @@ function toDto(row: Recipe): RecipeDto {
     totalMinutes: row.totalMinutes,
     hasImage: row.imageFilename !== null,
     requestText: row.requestText,
+    sourceUrl: row.sourceUrl,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

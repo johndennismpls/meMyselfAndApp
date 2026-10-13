@@ -38,16 +38,21 @@ export class DiscoveryService {
    * same constraints on every find, so they never reach the request text we
    * store. An empty list leaves the turn exactly as it was before settings
    * existed.
+   *
+   * `alreadySaved` is every source URL in the box (§7.2), so the search spends
+   * itself on pages we don't have. The model can still ignore it, so the
+   * caller filters the candidates again.
    */
   async discover(
     userRequest: string,
     preferences: string[] = [],
+    alreadySaved: string[] = [],
   ): Promise<DiscoveryResult> {
     const response = await this.claude.parse({
       model: 'opus',
       maxTokens: 16000,
       system: DISCOVERY_SYSTEM,
-      user: discoveryTurn(userRequest, preferences),
+      user: discoveryTurn(userRequest, preferences, alreadySaved),
       schema: Discovery,
       thinking: true,
       // Search-and-judge is genuinely harder than extraction; `low` tends to
@@ -94,6 +99,7 @@ export class DiscoveryService {
     this.trace.event('recipe.discovery', {
       interpretedAs: parsed.interpreted_as,
       preferences,
+      alreadySaved: alreadySaved.length,
       candidates: grounded.kept.map(summarise),
       groundingDropped: grounded.dropped.map(summarise),
       usage,

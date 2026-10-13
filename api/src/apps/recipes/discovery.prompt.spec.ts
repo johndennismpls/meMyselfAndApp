@@ -27,8 +27,28 @@ describe('discoveryTurn', () => {
     );
   });
 
-  it('keeps the preferences out of the cached system prompt', () => {
+  it('lists what is already saved between the preferences and the request', () => {
+    expect(
+      discoveryTurn(
+        'give me a brownie recipe',
+        ['No tree nuts'],
+        ['https://one.test/brownies'],
+      ),
+    ).toBe(
+      '<standing_preferences>\n' +
+        '- No tree nuts\n' +
+        '</standing_preferences>\n\n' +
+        '<already_saved>\n' +
+        '- https://one.test/brownies\n' +
+        '</already_saved>\n\n' +
+        'give me a brownie recipe',
+    );
+  });
+
+  it('keeps the preferences and saved URLs out of the cached system prompt', () => {
     expect(DISCOVERY_SYSTEM).toContain('<standing_preferences>');
+    expect(DISCOVERY_SYSTEM).toContain('<already_saved>');
     expect(DISCOVERY_SYSTEM).not.toContain('No tree nuts');
+    expect(DISCOVERY_SYSTEM).not.toContain('https://');
   });
 });

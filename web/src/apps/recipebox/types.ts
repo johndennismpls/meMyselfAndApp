@@ -23,8 +23,10 @@ export interface Recipe {
   cookMinutes: number | null
   totalMinutes: number | null
   hasImage: boolean
-  /** What you typed, on the find path. There is no link back to the source. */
+  /** What you typed, on the find path. */
   requestText: string | null
+  /** The page it was extracted from. Null when entered by hand. */
+  sourceUrl: string | null
   createdAt: string
   updatedAt: string
 }
@@ -50,7 +52,7 @@ export interface Candidate {
 export interface FindResult {
   recipe: Recipe
   interpretedAs: string
-  /** The winning candidate's site — the only place it appears (§1.3). */
+  /** The winning candidate's site. The record keeps the URL, not the name. */
   siteName: string
   why: string
   /** The runners-up, so "try a different source" costs no second find. */

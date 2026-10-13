@@ -23,11 +23,11 @@ web app is a thin client over it.
 | Output contract | Structured outputs via `messages.parse()` + Zod | The schema *is* the format guarantee. No prompt-and-pray JSON parsing. |
 | Images | Downloaded and stored on the API filesystem | Source images rot, move, and block hotlinking. Owning the bytes makes "use my own photo" a file upload, not a special case. |
 | Auth | None. One shared recipe box. | Matches the rest of this toolbox. Accounts are out of scope, not deferred-with-hooks — nothing here is shaped around a future user model. |
-| Edit history | None. Edits overwrite. | Recovery means finding the recipe again, or reading the page text back out of the trace log (§6.4) — the record itself no longer points anywhere. Revisions deferred (§13). |
+| Edit history | None. Edits overwrite. | Recovery means finding the recipe again, or following `source_url` back to the page (§1.3), or reading the page text back out of the trace log (§6.4). Revisions deferred (§13). |
 | Ingredients/steps storage | `jsonb` columns, not child tables | v1 has no cross-recipe ingredient query. Ordered lists in `jsonb` reorder with one `UPDATE`. §6.2 records what a future search costs. |
 | Commit point | Saves immediately, then you edit | Per the ask: commit, *then* edit. No preview-before-save step. |
 | Identifier | The serial `id`. `/recipes/42`. | No slug table, no collision suffixes, no slug-vs-title drift. A renamed recipe keeps its link for free because the link never contained the title. |
-| Source attribution | Logged, not stored | Per the ask. The source URL, site, and the page text extraction ran on go to the trace log (§6.4); no column holds them. Consequence in §1.3. |
+| Source attribution | The URL is stored; everything else is logged | `source_url` on the row, for a link back and the duplicate check. The site name and the page text extraction ran on go to the trace log (§6.4). See §1.3. |
 
 ### 1.1 Why two calls — the anti-fabrication design
 
@@ -78,17 +78,23 @@ without ingredients isn't usable, so **ingredients** is specified here as a firs
 section (§5.1). To genuinely exclude it, cut `ingredients` from the schema and the column;
 nothing else depends on it.
 
-### 1.3 No stored attribution
+### 1.3 Stored source URL
 
-The record holds no source URL or site name — they go to the trace log (§6.4) instead.
-Two consequences worth having said out loud:
+*Revised 2026-10-13. v1 stored no attribution at all; the URL came back so a find stops
+spending itself on pages already in the box.*
 
-- **The UI cannot link back to the original.** A saved recipe stands alone; the only route
-  back to the source is the log.
-- **Duplicate detection goes away** (§7.2). There is nothing to compare on, so asking for
-  pancakes twice gives you two pancake recipes. Deferred in §13.
+The record holds the source URL, `source_url`, and nothing else about the source. The
+site name, the image's origin and the page text stay in the trace log (§6.4). Two things
+follow:
 
-Fine for a private box. It would need revisiting if these were ever shared or published.
+- **The recipe page links back to the original.** Hand-entered recipes, and anything saved
+  before the column existed, have no link.
+- **Duplicates are checked** (§7.2). A find never saves a page that is already in the box,
+  and pasting one is a 409.
+
+On the find path the stored URL is the candidate's URL as discovery proposed it, not where
+it redirected to, because the next discovery will propose that same URL. On the pasted
+path it is where the fetch ended up.
 
 ## 2. The two ways in
 
@@ -169,7 +175,7 @@ const response = await this.client.messages.parse({
     effort: 'medium',
     format: zodOutputFormat(Discovery, 'discovery'),
   },
-  messages: [{ role: 'user', content: discoveryTurn(userRequest, preferences) }],
+  messages: [{ role: 'user', content: discoveryTurn(userRequest, preferences, alreadySaved) }],
 })
 ```
 
@@ -177,6 +183,11 @@ const response = await this.client.messages.parse({
 ride in the **user turn**, above the request, as a `<standing_preferences>` block of one
 line each — never in the system prompt, which has to stay byte-identical to keep the cache
 prefix (§5.5). With no preferences saved, the turn is the bare request, exactly as before.
+
+Every saved `source_url` rides the same way, in an `<already_saved>` block between the
+preferences and the request (§7.2). The system prompt tells discovery never to propose one
+of those pages and to look for another site's take instead. The list grows with the box,
+roughly 20 tokens per recipe, which is fine at personal scale.
 
 The system prompt tells it to:
 
@@ -455,6 +466,7 @@ export const recipes = pgTable('recipes', {
   imageMimeType: text('image_mime_type'),
 
   requestText: text('request_text'),         // what you typed, for the find path
+  sourceUrl: text('source_url'),             // §1.3; null when entered by hand
 
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -465,8 +477,9 @@ export const recipes = pgTable('recipes', {
 rather than the source: it's the input to the deferred "more like this" (§13) and it reads
 well in the UI. Cut it too if you'd rather the record hold nothing but the recipe.
 
-No indexes beyond the primary key. There is no duplicate check to support (§7.2) and the
-list query is a single unfiltered `ORDER BY created_at DESC`.
+No indexes beyond the primary key. The duplicate check (§7.2) compares *normalised* URLs,
+which a plain index on `source_url` can't serve, so it reads every non-null `source_url`
+and compares them in memory. The list query is a single unfiltered `ORDER BY created_at DESC`.
 
 #### `recipe_settings` — the standing preferences
 
@@ -557,7 +570,8 @@ page it came from.
 | Event | Fields |
 | --- | --- |
 | `recipe.request` | `traceId`, `path` (`find` \| `scrape`), `requestText` or `url` |
-| `recipe.discovery` | `traceId`, `interpretedAs`, `candidates[] {url, siteName, title, why}`, `groundingDropped[]` (§3.4), `usage` |
+| `recipe.discovery` | `traceId`, `interpretedAs`, `preferences`, `alreadySaved` (a count), `candidates[] {url, siteName, title, why}`, `groundingDropped[]` (§3.4), `usage` |
+| `recipe.duplicates` | `traceId`, `dropped[]`: candidates discovery proposed although they were already saved (§7.2) |
 | `recipe.fetch` | `traceId`, `url`, `outcome` (`ok` \| status code \| `blocked` \| `timeout`), `via` (`fetch` \| `web_fetch`), `bytes`, `ms` |
 | `recipe.pageText` | `traceId`, `url`, `chars`, `text` — **the full cleaned text extraction ran on** |
 | `recipe.extraction` | `traceId`, `isRecipe`, `rejectionReason`, `title`, `usage`, `stopReason` |
@@ -569,8 +583,8 @@ fires once per candidate attempted. That is the cost of having the source text t
 when a recipe comes out wrong, which is the whole reason for logging it. If the volume
 becomes a problem, that one event is the thing to drop — the rest is small.
 
-These are the only records of where a recipe came from, so a log rotation policy that
-discards them is also discarding the provenance (§1.3). Worth knowing before pointing this
+Beyond the stored URL (§1.3), these are the only records of where a recipe came from, so a
+log rotation policy that discards them also discards the site name and the page text. Worth knowing before pointing this
 at a log shipper with a short retention window.
 
 Page text is logged as a structured field, never interpolated into the message string, so
@@ -626,15 +640,22 @@ produce.
 Each attempt is logged with the URL and the reason it failed, because "why did it pick
 that one" is the question you'll actually have.
 
-### 7.2 Duplicates — there is no check
+### 7.2 Duplicates
 
-Dropping `source_url` (§1.3) removes the only thing a duplicate check could compare on, so
-there isn't one. Asking for pancakes twice saves two pancake recipes, and re-pasting a URL
-saves it again. Delete the extra by hand.
+Two URLs match when `normaliseUrl` (§3.4) agrees: host and path, ignoring `www.`, a
+trailing slash, the query string and the fragment. So `?utm_source=` variants count as the
+same page.
 
-This is a real cost of the simpler record, not an oversight: it also means a find can spend
-a full discovery call on a page already in the box. Restoring the check means storing a
-`source_url`, or a hash of one, and §13 records that.
+- **Find.** Every saved URL is handed to discovery up front (§3.3), so the search goes
+  looking for something new instead of retrying afterwards. Discovery can still ignore
+  it, so candidates that match a saved URL are dropped before any fetch and traced as
+  `recipe.duplicates`. If every candidate is dropped, the result is a 422.
+- **Pasted URL.** A 409 naming the recipe already saved. This is checked against the URL
+  as pasted, before the fetch, and again against where the fetch ended up, before the
+  extraction. Neither check spends money on a page we already have.
+
+Asking for pancakes twice still gives you two pancake recipes, from two different pages.
+That is the point: it is the *page* that must be new, not the dish.
 
 ### 7.3 Error table
 
@@ -644,6 +665,8 @@ a full discovery call on a page already in the box. Restoring the check means st
 | `is_food_request: false` | 422 | the model's `rejection_reason` |
 | Observed set empty (§3.4 rule 2) | 422 | `Couldn't search for that. Try again.` |
 | No candidate survived grounding, or all failed | 422 | `Couldn't find that one online.` |
+| Every candidate already in the box (§7.2) | 422 | `Everything I found is already in your box.` |
+| Pasted URL already in the box (§7.2) | 409 | `“<title>” is already in your box.` |
 | Malformed URL or non-HTTP scheme | 400 | `That doesn't look like a web address.` |
 | Blocked by the SSRF guard | 400 | `That URL isn't reachable from the server.` |
 | Fetch failed, timed out, or non-2xx | 502 | `Couldn't fetch that page (503 from example.com).` |
@@ -747,8 +770,8 @@ View mode by default, with an **Edit** toggle that swaps the page into one form.
 - Servings / yield / times: number and text inputs.
 - Image: current image with **Replace** (file picker) and **Remove**.
 - Provenance line: when `requestText` is set, *"Found for: give me a homemade pancakes
-  recipe"*, shown in both modes. There is no link back to the source — it isn't stored
-  (§1.3). The trace log is the only route back.
+  recipe"*, shown in both modes. In view mode, when `sourceUrl` is set, it is followed by
+  *"Source: seriouseats.com"*, which links to the page in a new tab (§1.3).
 
 One **Save** (`PATCH` of changed fields only), one **Cancel** (discards, back to view).
 Navigating away dirty prompts — TanStack Router's `onLeave` blocker plus a dirty check
@@ -895,11 +918,8 @@ CI is a bill and a flake.
 
 ## 13. Deferred
 
-- **Duplicate detection** — needs a stored `source_url`, or a hash of one, plus an index.
-  Removed with attribution (§1.3, §7.2); this is the entry that brings it back if two
-  pancake recipes annoy you.
-- **Attribution on the record** — a `source_url` / `source_name` pair and a link in the UI.
-  Required before anything here is shared or published, rather than kept privately.
+- **Source name on the record.** `source_url` is stored (§1.3) but the site name is not. The
+  UI shows the host instead. Worth adding before anything here is shared or published.
 - **Show the candidates before choosing** — a picker listing all three with titles and
   sites, instead of auto-taking the winner. The data is already in `FindResultDto`; this is
   UI only. Worth doing if auto-pick disappoints in practice.

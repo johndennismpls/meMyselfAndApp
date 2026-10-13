@@ -72,6 +72,14 @@ export class RecipeDto {
   })
   requestText: string | null;
 
+  @ApiProperty({
+    description:
+      'The page the recipe was extracted from. Null when entered by hand.',
+    nullable: true,
+    type: String,
+  })
+  sourceUrl: string | null;
+
   @ApiProperty()
   createdAt: string;
 
@@ -109,7 +117,7 @@ export class FindResultDto {
   interpretedAs: string;
   /**
    * The winning candidate's site, so the UI can say "Found X on Serious Eats"
-   * (§3.6). Returned, never stored — the record holds no attribution (§1.3).
+   * (§3.6). Returned, not stored — the record keeps only the URL (§1.3).
    */
   @ApiProperty({ example: 'Serious Eats' })
   siteName: string;

@@ -279,10 +279,33 @@ function RecipeView({ recipe }: { recipe: Recipe }) {
         </section>
       )}
 
-      {/* Shown in both modes. There is no link back — it isn't stored (§1.3). */}
-      {recipe.requestText && (
-        <p className="rb-note rb-provenance">Found for: {recipe.requestText}</p>
+      {(recipe.requestText || recipe.sourceUrl) && (
+        <p className="rb-note rb-provenance">
+          {recipe.requestText && <span>Found for: {recipe.requestText}</span>}
+          {recipe.sourceUrl && (
+            <span>
+              Source:{' '}
+              <a
+                className="rb-link"
+                href={recipe.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {hostOf(recipe.sourceUrl)}
+              </a>
+            </span>
+          )}
+        </p>
       )}
     </article>
   )
+}
+
+/** "seriouseats.com" from the full URL; the raw string if it won't parse. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url
+  }
 }

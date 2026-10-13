@@ -30,12 +30,12 @@ export type NewApp = typeof apps.$inferInsert;
 /**
  * Recipe Box (spec/02_recipebox.md §6.1).
  *
- * No source_url and no source_name: attribution is logged, not stored (§1.3).
  * Ingredients and steps are jsonb rather than child tables — they are ordered
  * lists always read and written whole, so an edit is one UPDATE (§6.2).
  *
- * No indexes beyond the primary key. There is no duplicate check to support
- * (§7.2) and the list query is a single unfiltered ORDER BY created_at DESC.
+ * No indexes beyond the primary key. The duplicate check (§7.2) compares
+ * normalised URLs, which a plain column index can't serve, and a personal box
+ * is small enough to read every source_url and compare in memory.
  */
 export const recipes = pgTable('recipes', {
   id: serial('id').primaryKey(),
@@ -65,6 +65,13 @@ export const recipes = pgTable('recipes', {
    * "more like this" (§13).
    */
   requestText: text('request_text'),
+
+  /**
+   * The page the recipe was extracted from (§1.3). Null for a hand-entered
+   * recipe, and for anything saved before the column existed. Stored as
+   * fetched; compare through normaliseUrl, never as a raw string (§7.2).
+   */
+  sourceUrl: text('source_url'),
 
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()

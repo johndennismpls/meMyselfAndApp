@@ -8,8 +8,8 @@ import type { FindResult } from './types'
  *
  * Deliberately in memory and deliberately single-slot: it is a transient piece
  * of "what just happened", not state. A reload clears it, which is correct —
- * the alternates lose their meaning once you have moved on, and nothing on the
- * record points back at a source (§1.3).
+ * the alternates lose their meaning once you have moved on. The source link
+ * itself lives on the record (§1.3); only the runners-up are transient.
  */
 
 let lastFind: FindResult | null = null

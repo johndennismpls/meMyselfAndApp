@@ -146,7 +146,6 @@ export default function RecipeForm({ recipe, draft, onChange }: Props) {
         ))}
       </div>
 
-      {/* The record carries no source URL, so there is nothing to link to (§1.3). */}
       {recipe.requestText && (
         <p className="rb-note">Found for: {recipe.requestText}</p>
       )}

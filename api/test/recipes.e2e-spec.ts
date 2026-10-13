@@ -131,6 +131,7 @@ describe('/recipes', () => {
         totalMinutes: 15,
         hasImage: false,
         requestText: 'give me a homemade pancakes recipe',
+        sourceUrl: candidate.url,
       },
     });
 
@@ -168,6 +169,43 @@ describe('/recipes', () => {
 
     await request(app.getHttpServer()).delete(`/recipes/${id}`).expect(204);
     await request(app.getHttpServer()).get(`/recipes/${id}`).expect(404);
+  });
+
+  it('will not save the same page twice (§7.2)', async () => {
+    await request(app.getHttpServer())
+      .post('/recipes/find')
+      .send({ request: 'pancakes' })
+      .expect(201);
+
+    // The stub only ever proposes the one page, and it is now in the box.
+    const again = await request(app.getHttpServer())
+      .post('/recipes/find')
+      .send({ request: 'pancakes' })
+      .expect(422);
+    expect(again.body.message).toBe(
+      'Everything I found is already in your box.',
+    );
+
+    const pasted = await request(app.getHttpServer())
+      .post('/recipes/scrape')
+      .send({ url: candidate.url })
+      .expect(409);
+    expect(pasted.body.message).toBe(
+      '“Fluffy Buttermilk Pancakes” is already in your box.',
+    );
+  });
+
+  it('saves a hand-entered recipe with no source, and never matches it', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/recipes')
+      .send({ title: 'Grandma’s Pancakes' })
+      .expect(201);
+    expect(created.body.sourceUrl).toBeNull();
+
+    await request(app.getHttpServer())
+      .post('/recipes/find')
+      .send({ request: 'pancakes' })
+      .expect(201);
   });
 
   it('rejects a non-numeric :id before reaching the service', async () => {

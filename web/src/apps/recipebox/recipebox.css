@@ -282,7 +282,10 @@
 
 .rb-provenance {
   border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
   font-size: 15px;
+  gap: 4px 24px;
   padding-top: 16px;
 }
 
